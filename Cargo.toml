@@ -1,0 +1,61 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/openclaw-core",
+    "crates/openclaw-store",
+    "crates/openclaw-gateway",
+    "crates/openclaw-agent",
+    "crates/openclaw-tools",
+    "crates/openclaw-channels",
+    "crates/openclaw-skills",
+    "crates/openclaw-cli",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/gcbh/rustycrab"
+
+[workspace.dependencies]
+# Async runtime & networking
+tokio = { version = "1", features = ["full"] }
+axum = "0.8"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Error handling
+thiserror = "2"
+anyhow = "1"
+
+# Logging / tracing
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Storage
+sled = "0.34"
+
+# Embedding static assets
+rust-embed = "8"
+
+# Async trait support
+async-trait = "0.1"
+
+# UUID generation
+uuid = { version = "1", features = ["v4", "serde"] }
+
+# Time
+chrono = { version = "0.4", features = ["serde"] }
+
+# Internal crates
+openclaw-core = { path = "crates/openclaw-core" }
+openclaw-store = { path = "crates/openclaw-store" }
+openclaw-gateway = { path = "crates/openclaw-gateway" }
+openclaw-agent = { path = "crates/openclaw-agent" }
+openclaw-tools = { path = "crates/openclaw-tools" }
+openclaw-channels = { path = "crates/openclaw-channels" }
+openclaw-skills = { path = "crates/openclaw-skills" }
+openclaw-cli = { path = "crates/openclaw-cli" }
