@@ -5,6 +5,7 @@ members = [
     "crates/openclaw-store",
     "crates/openclaw-gateway",
     "crates/openclaw-agent",
+    "crates/openclaw-providers",
     "crates/openclaw-tools",
     "crates/openclaw-channels",
     "crates/openclaw-skills",
@@ -63,6 +64,7 @@ openclaw-core = { path = "crates/openclaw-core" }
 openclaw-store = { path = "crates/openclaw-store" }
 openclaw-gateway = { path = "crates/openclaw-gateway" }
 openclaw-agent = { path = "crates/openclaw-agent" }
+openclaw-providers = { path = "crates/openclaw-providers" }
 openclaw-tools = { path = "crates/openclaw-tools" }
 openclaw-channels = { path = "crates/openclaw-channels" }
 openclaw-skills = { path = "crates/openclaw-skills" }
