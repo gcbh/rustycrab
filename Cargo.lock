@@ -1004,6 +1004,7 @@ dependencies = [
  "openclaw-channels",
  "openclaw-core",
  "openclaw-gateway",
+ "openclaw-providers",
  "openclaw-skills",
  "openclaw-store",
  "openclaw-tools",
@@ -1040,6 +1041,20 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "openclaw-providers"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "openclaw-core",
+ "reqwest",
+ "serde",
+ "serde_json",
  "tracing",
  "uuid",
 ]
