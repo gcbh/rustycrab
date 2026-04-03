@@ -1,0 +1,108 @@
+use std::collections::HashMap;
+use std::net::IpAddr;
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
+
+use axum::extract::{ConnectInfo, Request};
+use axum::http::StatusCode;
+use axum::middleware::Next;
+use axum::response::Response;
+
+/// Configuration for the rate limiter.
+#[derive(Debug, Clone)]
+pub struct RateLimitConfig {
+    /// Maximum number of requests per window.
+    pub max_requests: u32,
+    /// Duration of the sliding window.
+    pub window: Duration,
+    /// Duration to lock out an IP after exceeding the limit.
+    pub lockout: Duration,
+}
+
+impl Default for RateLimitConfig {
+    fn default() -> Self {
+        Self {
+            max_requests: 20,
+            window: Duration::from_secs(60),
+            lockout: Duration::from_secs(300), // 5-minute lockout
+        }
+    }
+}
+
+struct IpRecord {
+    attempts: Vec<Instant>,
+    locked_until: Option<Instant>,
+}
+
+/// In-memory, per-IP rate limiter.
+///
+/// Prevents brute-force attacks (CVE-2026-32025 class) by tracking
+/// request counts per source IP with an automatic lockout.
+pub struct RateLimiter {
+    config: RateLimitConfig,
+    records: Mutex<HashMap<IpAddr, IpRecord>>,
+}
+
+impl RateLimiter {
+    pub fn new(config: RateLimitConfig) -> Self {
+        Self {
+            config,
+            records: Mutex::new(HashMap::new()),
+        }
+    }
+
+    /// Returns `true` if the request should be allowed.
+    pub fn check(&self, ip: IpAddr) -> bool {
+        let mut records = self.records.lock().unwrap_or_else(|e| e.into_inner());
+        let now = Instant::now();
+
+        let record = records.entry(ip).or_insert_with(|| IpRecord {
+            attempts: Vec::new(),
+            locked_until: None,
+        });
+
+        // Check lockout.
+        if let Some(until) = record.locked_until {
+            if now < until {
+                return false;
+            }
+            // Lockout expired — reset.
+            record.locked_until = None;
+            record.attempts.clear();
+        }
+
+        // Prune old attempts outside the window.
+        let cutoff = now - self.config.window;
+        record.attempts.retain(|t| *t > cutoff);
+
+        // Check limit.
+        if record.attempts.len() >= self.config.max_requests as usize {
+            record.locked_until = Some(now + self.config.lockout);
+            tracing::warn!(%ip, "rate limit exceeded, locking out");
+            return false;
+        }
+
+        record.attempts.push(now);
+        true
+    }
+}
+
+/// Axum middleware that enforces rate limiting on API endpoints.
+pub async fn rate_limit_middleware(
+    ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
+    state: axum::extract::State<crate::AppState>,
+    request: Request,
+    next: Next,
+) -> Result<Response, StatusCode> {
+    // Only rate-limit API endpoints.
+    if !request.uri().path().starts_with("/api/") {
+        return Ok(next.run(request).await);
+    }
+
+    if !state.rate_limiter.check(addr.ip()) {
+        tracing::warn!(ip = %addr.ip(), path = %request.uri().path(), "rate limited");
+        return Err(StatusCode::TOO_MANY_REQUESTS);
+    }
+
+    Ok(next.run(request).await)
+}
