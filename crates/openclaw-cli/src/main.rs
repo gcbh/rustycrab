@@ -77,9 +77,10 @@ async fn main() -> anyhow::Result<()> {
     // --- Log provider status ---
     tracing::info!(provider = provider.name(), "model provider configured");
 
-    // --- Telegram channel (optional) ---
+    // --- Build gateway state ---
     let mut state = openclaw_gateway::AppState::new(store, first_tool, auth_token);
 
+    // --- Telegram channel (optional) ---
     if let Ok(bot_token) = std::env::var("TELEGRAM_BOT_TOKEN") {
         let allowed_chats: HashSet<i64> = std::env::var("TELEGRAM_ALLOWED_CHATS")
             .unwrap_or_default()
@@ -97,7 +98,6 @@ async fn main() -> anyhow::Result<()> {
         let tg = Arc::new(tg);
         state = state.with_telegram(tg.clone());
 
-        // If a webhook URL is configured, register it. Otherwise, start long-polling.
         if let Ok(webhook_url) = std::env::var("TELEGRAM_WEBHOOK_URL") {
             tg.set_webhook(&webhook_url).await?;
             tracing::info!("Telegram: webhook mode");
@@ -118,6 +118,65 @@ async fn main() -> anyhow::Result<()> {
             );
         } else {
             tracing::info!(chats = ?allowed_chats, "Telegram allowed chats configured");
+        }
+    }
+
+    // --- Signal channel (optional) ---
+    if let Ok(account_number) = std::env::var("SIGNAL_ACCOUNT") {
+        let base_url = std::env::var("SIGNAL_CLI_URL")
+            .unwrap_or_else(|_| "http://localhost:8080".to_string());
+
+        let allowed_numbers: HashSet<String> = std::env::var("SIGNAL_ALLOWED_NUMBERS")
+            .unwrap_or_default()
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect();
+
+        let webhook_secret = std::env::var("SIGNAL_WEBHOOK_SECRET").ok();
+
+        let mut sig =
+            openclaw_channels::SignalChannel::new(base_url.clone(), account_number.clone(), allowed_numbers.clone());
+        if let Some(secret) = webhook_secret {
+            sig = sig.with_webhook_secret(secret);
+        }
+
+        let sig = Arc::new(sig);
+        state = state.with_signal(sig.clone());
+
+        // Health check — verify signal-cli-rest-api is running.
+        match sig.health_check().await {
+            Ok(()) => tracing::info!("signal-cli-rest-api connected"),
+            Err(e) => tracing::error!("signal-cli-rest-api not reachable: {e}"),
+        }
+
+        // Webhook or polling mode.
+        if let Ok(webhook_url) = std::env::var("SIGNAL_WEBHOOK_URL") {
+            if let Err(e) = sig.register_webhook(&webhook_url).await {
+                tracing::error!("failed to register Signal webhook: {e}");
+            } else {
+                tracing::info!("Signal: webhook mode");
+            }
+        } else {
+            let sig_poll = sig.clone();
+            tokio::spawn(async move {
+                if let Err(e) = sig_poll.start_polling().await {
+                    tracing::error!("Signal polling error: {e}");
+                }
+            });
+            tracing::info!("Signal: polling mode");
+        }
+
+        if allowed_numbers.is_empty() {
+            tracing::warn!(
+                "SIGNAL_ALLOWED_NUMBERS not set — bot will deny all messages. \
+                 Set it to a comma-separated list of E.164 phone numbers."
+            );
+        } else {
+            tracing::info!(
+                numbers = ?allowed_numbers,
+                "Signal allowed numbers configured"
+            );
         }
     }
 

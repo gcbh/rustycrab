@@ -1,4 +1,4 @@
-use openclaw_channels::TelegramChannel;
+use openclaw_channels::{SignalChannel, TelegramChannel};
 use openclaw_store::Store;
 use std::sync::Arc;
 
@@ -14,6 +14,7 @@ pub struct AppState {
     pub rate_limiter: Arc<RateLimiter>,
     pub origin_policy: OriginPolicy,
     pub telegram: Option<Arc<TelegramChannel>>,
+    pub signal: Option<Arc<SignalChannel>>,
 }
 
 impl AppState {
@@ -29,6 +30,7 @@ impl AppState {
             rate_limiter: Arc::new(RateLimiter::new(RateLimitConfig::default())),
             origin_policy: OriginPolicy::default(),
             telegram: None,
+            signal: None,
         }
     }
 
@@ -47,6 +49,12 @@ impl AppState {
     /// Attach a Telegram channel.
     pub fn with_telegram(mut self, telegram: Arc<TelegramChannel>) -> Self {
         self.telegram = Some(telegram);
+        self
+    }
+
+    /// Attach a Signal channel.
+    pub fn with_signal(mut self, signal: Arc<SignalChannel>) -> Self {
+        self.signal = Some(signal);
         self
     }
 }
