@@ -21,8 +21,16 @@ pub struct AgentConfig {
     pub max_consecutive_errors: usize,
     /// Maximum retries per failed tool call.
     pub max_tool_retries: u32,
-    /// Number of messages to keep in full before summarizing.
-    pub memory_window: usize,
+    /// Estimated max context tokens for the model (used for budget calculations).
+    /// Defaults to 128k which works for Claude and large Qwen models.
+    pub max_context_tokens: usize,
+    /// Fraction of context reserved for the conversation summary (0.0–1.0).
+    /// The remaining budget is for recent messages + model response.
+    /// Default 0.20 (20%) — enough for a rich summary without crowding live context.
+    pub summary_budget_ratio: f64,
+    /// Fraction of context reserved for the model's response.
+    /// Default 0.15 (15%) — leaves room for a substantial reply.
+    pub response_reserve_ratio: f64,
 }
 
 impl Default for AgentConfig {
@@ -31,7 +39,9 @@ impl Default for AgentConfig {
             max_iterations: 30,
             max_consecutive_errors: 3,
             max_tool_retries: 2,
-            memory_window: 40,
+            max_context_tokens: 128_000,
+            summary_budget_ratio: 0.20,
+            response_reserve_ratio: 0.15,
         }
     }
 }
@@ -86,8 +96,8 @@ impl AgentRunner {
         let mut consecutive_errors = 0;
 
         for iteration in 0..self.config.max_iterations {
-            // Compress memory if conversation is getting long.
-            if conv.messages.len() > self.config.memory_window {
+            // Compress memory when estimated tokens exceed the budget.
+            if self.should_compress(conv) {
                 self.compress_memory(conv).await?;
             }
 
@@ -258,24 +268,125 @@ impl AgentRunner {
         });
     }
 
+    /// Estimate token count for a string using the 4-chars-per-token heuristic.
+    /// This is intentionally conservative — slightly over-counting is safer
+    /// than running into a context limit mid-generation.
+    fn estimate_tokens(text: &str) -> usize {
+        // ~4 chars per token for English; ~3 for code-heavy content.
+        // We use 3.5 as a middle ground that errs on the safe side.
+        (text.len() as f64 / 3.5).ceil() as usize
+    }
+
+    /// Estimate total token usage of all messages in a conversation.
+    fn estimate_conversation_tokens(conv: &Conversation) -> usize {
+        let mut total = 0;
+        if let Some(ref summary) = conv.summary {
+            total += Self::estimate_tokens(summary);
+        }
+        for msg in &conv.messages {
+            total += match &msg.content {
+                MessageContent::Text(t) => Self::estimate_tokens(t),
+                MessageContent::ToolCall(tc) => {
+                    Self::estimate_tokens(&tc.name)
+                        + Self::estimate_tokens(&tc.arguments.to_string())
+                }
+                MessageContent::ToolResult(tr) => {
+                    Self::estimate_tokens(&tr.output.to_string())
+                }
+                MessageContent::MultiToolCall(calls) => calls
+                    .iter()
+                    .map(|tc| {
+                        Self::estimate_tokens(&tc.name)
+                            + Self::estimate_tokens(&tc.arguments.to_string())
+                    })
+                    .sum(),
+            };
+            // Per-message overhead (role tokens, formatting).
+            total += 4;
+        }
+        total
+    }
+
+    /// The token budget available for live messages (everything except
+    /// the summary and the response reserve).
+    fn live_message_budget(&self) -> usize {
+        let total = self.config.max_context_tokens;
+        let summary_budget = (total as f64 * self.config.summary_budget_ratio) as usize;
+        let response_budget = (total as f64 * self.config.response_reserve_ratio) as usize;
+        total.saturating_sub(summary_budget).saturating_sub(response_budget)
+    }
+
+    /// Maximum tokens the summary should occupy.
+    fn summary_token_budget(&self) -> usize {
+        (self.config.max_context_tokens as f64 * self.config.summary_budget_ratio) as usize
+    }
+
+    /// Determine whether the conversation needs compression.
+    fn should_compress(&self, conv: &Conversation) -> bool {
+        let estimated = Self::estimate_conversation_tokens(conv);
+        let budget = self.live_message_budget();
+        // Trigger compression when we've used 85% of the live budget.
+        estimated > (budget as f64 * 0.85) as usize
+    }
+
     /// Compress older messages into a summary to stay within context limits.
     ///
-    /// Keeps the system prompt, the summary, and the most recent N messages.
-    /// Asks the model to produce the summary from the messages being dropped.
+    /// Uses a token-aware budget: drops the oldest messages until the
+    /// remaining messages fit within the live-message budget, then asks
+    /// the model to summarize the dropped portion within the summary
+    /// token budget.
     async fn compress_memory(&self, conv: &mut Conversation) -> Result<()> {
-        let keep = self.config.memory_window / 2;
-        if conv.messages.len() <= keep {
+        let live_budget = self.live_message_budget();
+        let summary_budget = self.summary_token_budget();
+        // Approximate max chars for the summary (inverse of token estimate).
+        let summary_max_chars = (summary_budget as f64 * 3.5) as usize;
+
+        // Find the split point: walk backwards from the end, accumulating
+        // tokens, until we've filled about 60% of the live budget.
+        // This keeps a healthy buffer for the next few turns.
+        let target = (live_budget as f64 * 0.60) as usize;
+        let mut keep_tokens = 0;
+        let mut keep_from = conv.messages.len();
+
+        for (i, msg) in conv.messages.iter().enumerate().rev() {
+            let msg_tokens = match &msg.content {
+                MessageContent::Text(t) => Self::estimate_tokens(t),
+                MessageContent::ToolCall(tc) => {
+                    Self::estimate_tokens(&tc.name)
+                        + Self::estimate_tokens(&tc.arguments.to_string())
+                }
+                MessageContent::ToolResult(tr) => {
+                    Self::estimate_tokens(&tr.output.to_string())
+                }
+                MessageContent::MultiToolCall(calls) => calls
+                    .iter()
+                    .map(|tc| {
+                        Self::estimate_tokens(&tc.name)
+                            + Self::estimate_tokens(&tc.arguments.to_string())
+                    })
+                    .sum(),
+            } + 4;
+
+            if keep_tokens + msg_tokens > target {
+                keep_from = i + 1;
+                break;
+            }
+            keep_tokens += msg_tokens;
+            keep_from = i;
+        }
+
+        // Don't compress if there's almost nothing to drop.
+        if keep_from <= 2 {
             return Ok(());
         }
 
-        let to_summarize = conv.messages.len() - keep;
-        let old_messages = &conv.messages[..to_summarize];
+        let old_messages = &conv.messages[..keep_from];
 
-        // Build a summary prompt from the old messages.
+        // Build the text of messages to summarize.
         let mut summary_text = String::new();
         for msg in old_messages {
             let role = match msg.role {
-                Role::System => continue, // Keep system prompts.
+                Role::System => continue,
                 Role::User => "User",
                 Role::Assistant => "Assistant",
                 Role::Tool => "Tool",
@@ -289,7 +400,7 @@ impl AgentRunner {
             return Ok(());
         }
 
-        // Ask the model to summarize.
+        // Incorporate existing summary for continuity.
         let existing_summary = conv
             .summary
             .as_deref()
@@ -301,28 +412,48 @@ impl AgentRunner {
             role: Role::User,
             content: MessageContent::Text(format!(
                 "{existing_summary}Summarize this conversation concisely, preserving \
-                 key facts, decisions, and any information that would be needed to \
-                 continue the conversation:\n\n{summary_text}"
+                 key facts, decisions, tool results, and any information needed to \
+                 continue the conversation. Your summary MUST be under \
+                 {summary_max_chars} characters.\n\n{summary_text}"
             )),
             created_at: Utc::now(),
         }];
 
         let response = self.provider.chat(&summary_prompt, &[]).await?;
-        let summary = response
+        let mut summary = response
             .message
             .content
             .as_text()
             .unwrap_or("(summary failed)")
             .to_string();
 
+        // Hard-truncate if the model exceeded the budget (shouldn't happen
+        // often, but guarantees we don't blow the context on re-injection).
+        if Self::estimate_tokens(&summary) > summary_budget {
+            // Truncate to stay within budget, leaving room for the ellipsis.
+            let max_bytes = summary_max_chars.min(summary.len());
+            // Find a clean char boundary.
+            let truncate_at = summary
+                .char_indices()
+                .take_while(|(i, _)| *i < max_bytes)
+                .last()
+                .map(|(i, c)| i + c.len_utf8())
+                .unwrap_or(max_bytes);
+            summary.truncate(truncate_at);
+            summary.push_str("…");
+            tracing::warn!("summary exceeded token budget, truncated");
+        }
+
         tracing::info!(
-            dropped = to_summarize,
-            kept = keep,
+            dropped = keep_from,
+            kept = conv.messages.len() - keep_from,
+            summary_tokens = Self::estimate_tokens(&summary),
+            summary_budget = summary_budget,
             "compressed conversation memory"
         );
 
-        // Remove old messages and store summary.
-        conv.messages = conv.messages.split_off(to_summarize);
+        // Drop old messages and store summary.
+        conv.messages = conv.messages.split_off(keep_from);
         conv.summary = Some(summary.clone());
 
         // Insert summary as a system-level context message at the start.
