@@ -84,30 +84,9 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!(provider = provider.name(), "model provider configured");
 
     // --- Harness router (auto-selects profile per message) ---
-    // Uses the cheapest model available for classification.
-    let classifier: Arc<dyn ModelProvider> = match std::env::var("OPENCLAW_PROVIDER")
-        .unwrap_or_else(|_| "anthropic".to_string())
-        .to_lowercase()
-        .as_str()
-    {
-        "ollama" => {
-            // Use a tiny model for classification — qwen3:0.6b is ~300MB.
-            let model =
-                std::env::var("OPENCLAW_CLASSIFIER_MODEL").unwrap_or_else(|_| "qwen3:0.6b".to_string());
-            let base_url = std::env::var("OLLAMA_BASE_URL")
-                .unwrap_or_else(|_| "http://localhost:11434".to_string());
-            tracing::info!(%model, "harness classifier: Ollama");
-            Arc::new(openclaw_providers::OllamaProvider::new(model).with_base_url(base_url))
-        }
-        _ => {
-            // Haiku is the cheapest Anthropic model — perfect for single-shot classification.
-            let api_key = std::env::var("ANTHROPIC_API_KEY").unwrap_or_default();
-            let model = std::env::var("OPENCLAW_CLASSIFIER_MODEL")
-                .unwrap_or_else(|_| "claude-haiku-4-5-20251001".to_string());
-            tracing::info!(%model, "harness classifier: Anthropic");
-            Arc::new(openclaw_providers::AnthropicProvider::new(api_key).with_model(model))
-        }
-    };
+    // Reuses the main provider for classification to avoid model swapping.
+    // The classification prompt is ~50 tokens — negligible overhead on any model.
+    let classifier: Arc<dyn ModelProvider> = provider.clone();
 
     let router = Arc::new(HarnessRouter::new(classifier).with_base(profile));
 
