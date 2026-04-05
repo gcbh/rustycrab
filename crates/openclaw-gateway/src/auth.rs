@@ -19,12 +19,6 @@ pub async fn require_auth(
         return Ok(next.run(request).await);
     }
 
-    // Bioauth response endpoint uses cryptographic (Ed25519) auth,
-    // not bearer tokens — the phone signs the challenge nonce.
-    if request.uri().path() == "/api/bioauth/respond" {
-        return Ok(next.run(request).await);
-    }
-
     // Static assets are public (the WebChat UI).
     if !request.uri().path().starts_with("/api/") && !request.uri().path().starts_with("/webhook/") {
         return Ok(next.run(request).await);

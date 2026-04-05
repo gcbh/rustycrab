@@ -1,5 +1,4 @@
 pub mod auth;
-pub mod bioauth;
 pub mod origin;
 pub mod rate_limit;
 mod routes;
@@ -21,7 +20,6 @@ use axum::Router;
 pub fn router(state: AppState) -> Router {
     Router::new()
         .merge(routes::api_routes())
-        .merge(bioauth::bioauth_routes())
         .merge(ws::ws_routes())
         .merge(telegram_webhook::telegram_routes())
         .merge(signal_webhook::signal_routes())

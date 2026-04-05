@@ -1092,27 +1092,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "openclaw-bioauth"
-version = "0.1.0"
-dependencies = [
- "base64",
- "chrono",
- "ed25519-dalek",
- "hex",
- "openclaw-core",
- "rand 0.8.5",
- "reqwest",
- "serde",
- "serde_json",
- "sha2",
- "sled",
- "thiserror",
- "tokio",
- "tracing",
- "uuid",
-]
-
-[[package]]
 name = "openclaw-channels"
 version = "0.1.0"
 dependencies = [
@@ -1138,7 +1117,6 @@ dependencies = [
  "axum",
  "dirs",
  "openclaw-agent",
- "openclaw-bioauth",
  "openclaw-channels",
  "openclaw-core",
  "openclaw-gateway",
@@ -1175,7 +1153,6 @@ dependencies = [
  "hex",
  "mime_guess",
  "openclaw-agent",
- "openclaw-bioauth",
  "openclaw-channels",
  "openclaw-core",
  "openclaw-store",

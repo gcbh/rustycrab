@@ -9,7 +9,6 @@ license.workspace = true
 openclaw-core.workspace = true
 openclaw-store.workspace = true
 openclaw-agent.workspace = true
-openclaw-bioauth.workspace = true
 openclaw-channels.workspace = true
 axum = { workspace = true, features = ["ws"] }
 tokio.workspace = true

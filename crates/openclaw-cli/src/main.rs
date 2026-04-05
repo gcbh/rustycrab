@@ -189,33 +189,6 @@ async fn main() -> anyhow::Result<()> {
         }
     }
 
-    // --- Biometric phone authentication (optional) ---
-    // Set OPENCLAW_BIOAUTH_URL to the externally-reachable URL of this gateway
-    // (e.g. an ngrok/cloudflare tunnel) to enable push-based biometric auth.
-    if let Ok(gateway_url) = std::env::var("OPENCLAW_BIOAUTH_URL") {
-        let device_store = openclaw_bioauth::DeviceStore::open(data_dir.join("bioauth"))
-            .expect("failed to open bioauth device store");
-
-        let push_config = openclaw_bioauth::PushConfig {
-            fcm_server_key: std::env::var("OPENCLAW_FCM_SERVER_KEY").ok(),
-            apns_key_id: std::env::var("OPENCLAW_APNS_KEY_ID").ok(),
-            apns_team_id: std::env::var("OPENCLAW_APNS_TEAM_ID").ok(),
-            apns_bundle_id: std::env::var("OPENCLAW_APNS_BUNDLE_ID").ok(),
-            apns_key_path: std::env::var("OPENCLAW_APNS_KEY_PATH").ok(),
-            webhook_url_template: std::env::var("OPENCLAW_BIOAUTH_WEBHOOK_URL").ok(),
-        };
-
-        let push_notifier = openclaw_bioauth::PushNotifier::new(push_config);
-        let gate = openclaw_bioauth::BioAuthGate::new(
-            device_store,
-            push_notifier,
-            gateway_url.clone(),
-        );
-
-        state = state.with_bioauth(std::sync::Arc::new(gate));
-        tracing::info!(url = %gateway_url, "biometric phone authentication enabled");
-    }
-
     // --- Gateway with security middleware ---
     let app = openclaw_gateway::router(state);
 
