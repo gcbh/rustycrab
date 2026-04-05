@@ -24,6 +24,8 @@ pub enum Capability {
     Tool(String),
     /// Can read/write secrets.
     SecretAccess,
+    /// Can request biometric authentication from a paired phone.
+    BiometricAuth,
     /// Administrative — can manage other sessions.
     Admin,
 }

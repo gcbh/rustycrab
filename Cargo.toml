@@ -9,6 +9,7 @@ members = [
     "crates/openclaw-tools",
     "crates/openclaw-channels",
     "crates/openclaw-skills",
+    "crates/openclaw-bioauth",
     "crates/openclaw-cli",
 ]
 
@@ -69,4 +70,5 @@ openclaw-providers = { path = "crates/openclaw-providers" }
 openclaw-tools = { path = "crates/openclaw-tools" }
 openclaw-channels = { path = "crates/openclaw-channels" }
 openclaw-skills = { path = "crates/openclaw-skills" }
+openclaw-bioauth = { path = "crates/openclaw-bioauth" }
 openclaw-cli = { path = "crates/openclaw-cli" }

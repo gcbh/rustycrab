@@ -13,6 +13,7 @@ openclaw-agent.workspace = true
 openclaw-tools.workspace = true
 openclaw-channels.workspace = true
 openclaw-skills.workspace = true
+openclaw-bioauth.workspace = true
 openclaw-providers.workspace = true
 axum.workspace = true
 tokio.workspace = true

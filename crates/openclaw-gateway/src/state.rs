@@ -1,4 +1,5 @@
 use openclaw_agent::{HarnessProfile, HarnessRouter};
+use openclaw_bioauth::BioAuthGate;
 use openclaw_channels::{SignalChannel, TelegramChannel};
 use openclaw_core::model::ModelProvider;
 use openclaw_store::Store;
@@ -23,6 +24,8 @@ pub struct AppState {
     /// Auto-router that classifies messages and selects profiles on-the-fly.
     /// None = static profile mode (uses harness_profile directly).
     pub harness_router: Option<Arc<HarnessRouter>>,
+    /// Biometric phone authentication gate (None = disabled).
+    pub bioauth: Option<Arc<BioAuthGate>>,
 }
 
 impl AppState {
@@ -43,6 +46,7 @@ impl AppState {
             signal: None,
             harness_profile: HarnessProfile::default(),
             harness_router: None,
+            bioauth: None,
         }
     }
 
@@ -80,6 +84,12 @@ impl AppState {
     /// selects the right harness profile on-the-fly.
     pub fn with_harness_router(mut self, router: Arc<HarnessRouter>) -> Self {
         self.harness_router = Some(router);
+        self
+    }
+
+    /// Enable biometric phone authentication.
+    pub fn with_bioauth(mut self, gate: Arc<BioAuthGate>) -> Self {
+        self.bioauth = Some(gate);
         self
     }
 
