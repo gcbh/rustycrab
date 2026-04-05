@@ -1102,6 +1102,7 @@ name = "openclaw-tools"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "base64",
  "openclaw-core",
  "reqwest",
  "serde",
