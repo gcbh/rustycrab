@@ -64,6 +64,9 @@ mod http_session;
 mod credential_read;
 mod credential_write;
 
+// Skill tools
+mod skill_create;
+
 // --- Public re-exports ---
 
 // Filesystem
@@ -128,6 +131,9 @@ pub use http_session::HttpSessionTool;
 // Credentials
 pub use credential_read::CredentialReadTool;
 pub use credential_write::CredentialWriteTool;
+
+// Skills
+pub use skill_create::SkillCreateTool;
 
 /// Collect all built-in tools that require no external backend into a Vec.
 ///
@@ -200,6 +206,13 @@ pub fn message_tools(
     backend: std::sync::Arc<dyn MessageBackend>,
 ) -> Vec<std::sync::Arc<dyn openclaw_core::Tool>> {
     vec![std::sync::Arc::new(MessageTool::new(backend))]
+}
+
+/// Collect skill tools that require a skills directory into a Vec.
+pub fn skill_tools(
+    skills_dir: std::path::PathBuf,
+) -> Vec<std::sync::Arc<dyn openclaw_core::Tool>> {
+    vec![std::sync::Arc::new(SkillCreateTool::new(skills_dir))]
 }
 
 /// Collect automation tools that require backends into a Vec.

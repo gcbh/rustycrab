@@ -78,8 +78,13 @@ async fn main() -> anyhow::Result<()> {
         }
     };
 
+    // --- Skills directory (needed by skill tools and skill loader) ---
+    let skills_dir = data_dir.join("skills");
+    std::fs::create_dir_all(&skills_dir)?;
+
     // --- Tools ---
-    let tools = openclaw_tools::builtin_tools(store.secrets());
+    let mut tools = openclaw_tools::builtin_tools(store.secrets());
+    tools.extend(openclaw_tools::skill_tools(skills_dir.clone()));
 
     // --- Log provider status ---
     tracing::info!(provider = provider.name(), "model provider configured");
