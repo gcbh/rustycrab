@@ -13,8 +13,28 @@ pub use origin::OriginPolicy;
 pub use rate_limit::RateLimitConfig;
 pub use state::AppState;
 
+use axum::http::header;
 use axum::middleware;
+use axum::response::Response;
 use axum::Router;
+
+/// Add security headers to every response.
+async fn add_security_headers(mut response: Response) -> Response {
+    let headers = response.headers_mut();
+    headers.insert(header::X_FRAME_OPTIONS, "DENY".parse().unwrap());
+    headers.insert(header::X_CONTENT_TYPE_OPTIONS, "nosniff".parse().unwrap());
+    headers.insert(
+        header::HeaderName::from_static("x-xss-protection"),
+        "1; mode=block".parse().unwrap(),
+    );
+    headers.insert(
+        header::CONTENT_SECURITY_POLICY,
+        "default-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data:"
+            .parse()
+            .unwrap(),
+    );
+    response
+}
 
 /// Build the main application router with all security middleware.
 pub fn router(state: AppState) -> Router {
@@ -36,4 +56,5 @@ pub fn router(state: AppState) -> Router {
             rate_limit::rate_limit_middleware,
         ))
         .with_state(state)
+        .layer(middleware::map_response(add_security_headers))
 }

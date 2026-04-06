@@ -41,17 +41,22 @@ pub async fn require_auth(
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.strip_prefix("Bearer "));
 
-    let current_token = state.auth_token.read().unwrap().clone();
-    match token {
-        Some(t) if constant_time_eq(t, &current_token) => Ok(next.run(request).await),
-        _ => {
-            // Track auth failures for rate limiting
-            tracing::warn!(
-                path = %request.uri().path(),
-                "rejected unauthenticated request"
-            );
-            Err(StatusCode::UNAUTHORIZED)
-        }
+    // Hold the read guard during comparison to prevent TOCTOU race
+    // with token rotation. The guard is dropped before the await point
+    // (next.run) to avoid holding the lock across an async boundary.
+    let is_valid = {
+        let token_guard = state.auth_token.read().unwrap_or_else(|e| e.into_inner());
+        token.map_or(false, |t| constant_time_eq(t, &token_guard))
+    };
+
+    if is_valid {
+        Ok(next.run(request).await)
+    } else {
+        tracing::warn!(
+            path = %request.uri().path(),
+            "rejected unauthenticated request"
+        );
+        Err(StatusCode::UNAUTHORIZED)
     }
 }
 

@@ -73,8 +73,26 @@ impl CapabilitySet {
     }
 
     /// Create a capability set that grants access to a specific set of tools
-    /// plus standard resource capabilities (file, shell, http).
+    /// with only safe defaults (`HttpRequest` + `Tool(name)` entries).
+    ///
+    /// Use `for_tools_permissive()` if you need file, shell, and other
+    /// resource capabilities as well (and understand the security tradeoff).
     pub fn for_tools(tool_names: &[&str]) -> Self {
+        let mut caps = HashSet::new();
+        caps.insert(Capability::HttpRequest);
+        for name in tool_names {
+            caps.insert(Capability::Tool(name.to_string()));
+        }
+        Self { capabilities: caps }
+    }
+
+    /// Create a capability set that grants access to a specific set of tools
+    /// plus all standard resource capabilities (file read/write, shell, http).
+    ///
+    /// # Security
+    /// This grants broad permissions. Prefer `for_tools()` and explicitly
+    /// granting only the capabilities each tool actually needs.
+    pub fn for_tools_permissive(tool_names: &[&str]) -> Self {
         let mut caps = HashSet::new();
         caps.insert(Capability::FileRead);
         caps.insert(Capability::FileWrite);

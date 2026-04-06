@@ -116,7 +116,7 @@ impl AppState {
     /// and returns the new value. The old token is immediately invalidated.
     pub fn rotate_token(&self) -> String {
         let new_token = crate::auth::generate_token();
-        let mut guard = self.auth_token.write().unwrap();
+        let mut guard = self.auth_token.write().unwrap_or_else(|e| e.into_inner());
         *guard = new_token.clone();
         new_token
     }

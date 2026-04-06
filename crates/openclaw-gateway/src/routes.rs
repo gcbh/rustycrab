@@ -16,6 +16,9 @@ use openclaw_core::types::{Conversation, Message, MessageContent, Role};
 
 use crate::AppState;
 
+/// Maximum allowed message size in bytes (100 KB).
+const MAX_MESSAGE_SIZE: usize = 100_000;
+
 pub fn api_routes() -> Router<AppState> {
     Router::new()
         .route("/api/conversations", post(create_conversation))
@@ -102,6 +105,10 @@ async fn send_message(
     Path(id): Path<Uuid>,
     Json(body): Json<SendMessageRequest>,
 ) -> Result<Json<Message>, StatusCode> {
+    if body.content.len() > MAX_MESSAGE_SIZE {
+        return Err(StatusCode::PAYLOAD_TOO_LARGE);
+    }
+
     // Load the conversation.
     let mut conv = state
         .store
@@ -149,6 +156,10 @@ async fn send_message_stream(
     Path(id): Path<Uuid>,
     Json(body): Json<SendMessageRequest>,
 ) -> Result<Sse<impl tokio_stream::Stream<Item = Result<Event, Infallible>>>, StatusCode> {
+    if body.content.len() > MAX_MESSAGE_SIZE {
+        return Err(StatusCode::PAYLOAD_TOO_LARGE);
+    }
+
     // Load the conversation.
     let mut conv = state
         .store
@@ -171,7 +182,8 @@ async fn send_message_stream(
     // Channel for streaming events from the agent task to the SSE response.
     let (tx, rx) = tokio::sync::mpsc::channel::<SsePayload>(128);
 
-    // Spawn the agent loop in a background task.
+    // Spawn the agent loop in a background task with a 5-minute timeout
+    // to prevent unbounded connection exhaustion.
     let agent_state = state.clone();
     tokio::spawn(async move {
         let event_tx = tx.clone();
@@ -179,13 +191,24 @@ async fn send_message_stream(
             let _ = event_tx.try_send(SsePayload::Event(event));
         };
 
-        let result = crate::orchestrate::run_agent_streaming(
-            &agent_state,
-            &mut conv,
-            &user_content,
-            &on_event,
+        let result = tokio::time::timeout(
+            tokio::time::Duration::from_secs(300),
+            crate::orchestrate::run_agent_streaming(
+                &agent_state,
+                &mut conv,
+                &user_content,
+                &on_event,
+            ),
         )
         .await;
+
+        let result = match result {
+            Ok(r) => r,
+            Err(_) => {
+                tracing::warn!("streaming agent timed out after 300s");
+                Err(StatusCode::REQUEST_TIMEOUT)
+            }
+        };
 
         // Persist conversation on success.
         if result.is_ok() {
