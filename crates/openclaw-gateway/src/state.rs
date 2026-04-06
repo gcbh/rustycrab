@@ -1,6 +1,7 @@
-use openclaw_agent::{HarnessProfile, HarnessRouter, ProcessSandbox, Sandbox};
+use openclaw_agent::{HarnessProfile, HarnessRouter, OrchestrationPipeline, ProcessSandbox, Sandbox};
 use openclaw_channels::{SignalChannel, TelegramChannel};
 use openclaw_core::model::ModelProvider;
+use openclaw_core::orchestration::OrchestrationConfig;
 use openclaw_store::Store;
 use std::sync::Arc;
 
@@ -25,6 +26,11 @@ pub struct AppState {
     /// Auto-router that classifies messages and selects profiles on-the-fly.
     /// None = static profile mode (uses harness_profile directly).
     pub harness_router: Option<Arc<HarnessRouter>>,
+    /// Orchestration pipeline for recursive agentic patterns.
+    /// None = disabled (direct agent loop only).
+    pub orchestration_pipeline: Option<Arc<OrchestrationPipeline>>,
+    /// Orchestration configuration.
+    pub orchestration_config: OrchestrationConfig,
 }
 
 impl AppState {
@@ -46,6 +52,8 @@ impl AppState {
             sandbox: Arc::new(ProcessSandbox::new()),
             harness_profile: HarnessProfile::default(),
             harness_router: None,
+            orchestration_pipeline: None,
+            orchestration_config: OrchestrationConfig::default(),
         }
     }
 
@@ -89,6 +97,18 @@ impl AppState {
     /// selects the right harness profile on-the-fly.
     pub fn with_harness_router(mut self, router: Arc<HarnessRouter>) -> Self {
         self.harness_router = Some(router);
+        self
+    }
+
+    /// Enable the orchestration pipeline for recursive agentic patterns.
+    pub fn with_orchestration_pipeline(mut self, pipeline: Arc<OrchestrationPipeline>) -> Self {
+        self.orchestration_pipeline = Some(pipeline);
+        self
+    }
+
+    /// Set the orchestration configuration.
+    pub fn with_orchestration_config(mut self, config: OrchestrationConfig) -> Self {
+        self.orchestration_config = config;
         self
     }
 

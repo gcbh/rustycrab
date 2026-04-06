@@ -50,10 +50,11 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
 
         let incoming: WsIncoming = match serde_json::from_str(&text) {
             Ok(v) => v,
-            Err(e) => {
+            Err(_) => {
+                // H10: Sanitize error messages — don't leak internal details
                 let _ = socket
                     .send(WsMessage::Text(
-                        serde_json::json!({"type": "error", "delta": e.to_string()}).to_string().into(),
+                        serde_json::json!({"type": "error", "delta": "invalid message format"}).to_string().into(),
                     ))
                     .await;
                 continue;
@@ -136,10 +137,13 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
                 },
                 AgentEvent::Done => continue, // handled below
             };
+            // H10: Use safe serialization instead of unwrap
+            let json_str = match serde_json::to_string(&ws_msg) {
+                Ok(s) => s,
+                Err(_) => continue,
+            };
             if socket
-                .send(WsMessage::Text(
-                    serde_json::to_string(&ws_msg).unwrap().into(),
-                ))
+                .send(WsMessage::Text(json_str.into()))
                 .await
                 .is_err()
             {
@@ -158,25 +162,28 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
                     delta: None,
                     message: Some(assistant_msg),
                 };
-                let _ = socket
-                    .send(WsMessage::Text(
-                        serde_json::to_string(&done_out).unwrap().into(),
-                    ))
-                    .await;
+                // H10: Use safe serialization instead of unwrap
+                if let Ok(json_str) = serde_json::to_string(&done_out) {
+                    let _ = socket
+                        .send(WsMessage::Text(json_str.into()))
+                        .await;
+                }
             }
             Ok(Err(_)) => {
+                // H10: Don't leak internal error details to client
                 let _ = socket
                     .send(WsMessage::Text(
-                        serde_json::json!({"type": "error", "delta": "agent pipeline error"})
+                        serde_json::json!({"type": "error", "delta": "an internal error occurred"})
                             .to_string()
                             .into(),
                     ))
                     .await;
             }
-            Err(e) => {
+            Err(_) => {
+                // H10: Don't leak internal error details to client
                 let _ = socket
                     .send(WsMessage::Text(
-                        serde_json::json!({"type": "error", "delta": e.to_string()})
+                        serde_json::json!({"type": "error", "delta": "an internal error occurred"})
                             .to_string()
                             .into(),
                     ))

@@ -37,6 +37,9 @@ impl SecretStore {
 
     /// Store a secret value under the given name.
     pub fn set(&self, name: &str, value: &str) -> Result<(), Error> {
+        // Validate secret name to prevent injection and normalization attacks
+        Self::validate_name(name)?;
+
         let encrypted = self.encrypt(name, value.as_bytes())?;
         self.tree
             .insert(name.as_bytes(), encrypted)
@@ -74,6 +77,23 @@ impl SecretStore {
             names.push(name);
         }
         Ok(names)
+    }
+
+    /// Validate that a secret name is well-formed.
+    ///
+    /// Prevents Unicode normalization attacks and ensures key names
+    /// are safe for use as HMAC/AAD inputs.
+    fn validate_name(name: &str) -> Result<(), Error> {
+        if name.is_empty() || name.len() > 256 {
+            return Err(Error::Storage("secret name must be 1-256 characters".into()));
+        }
+        // Allow alphanumeric, underscore, hyphen, and dot
+        if !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == '.') {
+            return Err(Error::Storage(
+                "secret name must contain only alphanumeric characters, underscores, hyphens, and dots".into(),
+            ));
+        }
+        Ok(())
     }
 
     /// Encrypt data with AES-256-GCM. Returns `salt || nonce || ciphertext+tag`.

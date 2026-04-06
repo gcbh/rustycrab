@@ -1286,6 +1286,8 @@ dependencies = [
  "serde_json",
  "tokio",
  "tracing",
+ "url",
+ "uuid",
 ]
 
 [[package]]
