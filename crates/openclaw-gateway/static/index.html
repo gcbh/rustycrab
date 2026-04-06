@@ -303,6 +303,14 @@
 
   .bubble p + p { margin-top: 8px; }
 
+  .message-meta {
+    font-size: 11px;
+    color: var(--text-tertiary);
+    margin-top: 4px;
+    padding: 0 4px;
+  }
+  .message.user .message-meta { text-align: right; }
+
   /* Typing indicator */
   .typing-indicator {
     display: flex;
@@ -655,7 +663,6 @@
   let activeConvId = null;
   let activeMessages = [];
   let isSending = false;
-  let ws = null;
   let streamBuffer = '';
 
   // ── DOM Refs ──────────────────────────────────────────────
@@ -732,31 +739,20 @@
   // ── Init ──────────────────────────────────────────────────
   async function init() {
     await loadConversations();
-    connectWebSocket();
   }
 
-  // ── WebSocket ─────────────────────────────────────────────
-  function connectWebSocket() {
-    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    ws = new WebSocket(`${proto}//${location.host}/ws/chat`);
-    ws.onopen = () => console.log('WebSocket connected');
-    ws.onclose = () => {
-      console.log('WebSocket closed, reconnecting in 3s...');
-      setTimeout(connectWebSocket, 3000);
-    };
-    ws.onmessage = (event) => {
-      const data = JSON.parse(event.data);
-      if (data.type === 'delta') {
-        streamBuffer += data.delta;
-        updateStreamingMessage(streamBuffer);
-      } else if (data.type === 'done') {
-        finalizeStreamingMessage(data.message);
-      } else if (data.type === 'error') {
-        removeTypingIndicator();
-        isSending = false;
-        updateSendButton();
-      }
-    };
+  // ── SSE stream event handler ──────────────────────────────
+  function handleStreamEvent(data) {
+    if (data.type === 'delta') {
+      streamBuffer += data.delta;
+      updateStreamingMessage(streamBuffer);
+    } else if (data.type === 'done') {
+      finalizeStreamingMessage(data.message);
+    } else if (data.type === 'error') {
+      removeTypingIndicator();
+      isSending = false;
+      updateSendButton();
+    }
   }
 
   // ── Conversations ─────────────────────────────────────────
@@ -883,18 +879,24 @@
     msgContainer.innerHTML = '';
     for (const msg of activeMessages) {
       if (msg.role === 'system' || msg.role === 'tool') continue;
-      appendMessageBubble(msg.role, extractText(msg.content));
+      appendMessageBubble(msg.role, extractText(msg.content), msg.created_at);
     }
     scrollToBottom();
   }
 
-  function appendMessageBubble(role, text) {
+  function appendMessageBubble(role, text, timestamp) {
     const div = document.createElement('div');
     div.className = `message ${role}`;
     const bubble = document.createElement('div');
     bubble.className = 'bubble';
     bubble.innerHTML = formatMessageText(text);
     div.appendChild(bubble);
+    if (timestamp) {
+      const meta = document.createElement('div');
+      meta.className = 'message-meta';
+      meta.textContent = formatTimestamp(timestamp);
+      div.appendChild(meta);
+    }
     msgContainer.appendChild(div);
   }
 
@@ -998,36 +1000,53 @@
 
     showTypingIndicator();
 
-    // Try WebSocket first, fall back to REST
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({
-        conversation_id: activeConvId,
-        content: text,
-      }));
-    } else {
-      // REST fallback
-      try {
-        const response = await api(`/api/conversations/${activeConvId}/messages`, {
-          method: 'POST',
-          body: JSON.stringify({ content: text }),
-        });
-        removeTypingIndicator();
-        activeMessages.push(response);
-        appendMessageBubble('assistant', extractText(response.content));
-        scrollToBottom();
-      } catch (e) {
-        removeTypingIndicator();
-        appendMessageBubble('assistant', 'Something went wrong. Please try again.');
-      }
-      isSending = false;
-      updateSendButton();
+    // Stream response via SSE
+    try {
+      const res = await fetch(`/api/conversations/${activeConvId}/messages/stream`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({ content: text }),
+      });
 
-      if (conv) {
-        const last = activeMessages[activeMessages.length - 1];
-        conv.preview = extractText(last.content).slice(0, 60);
-        conv.updated_at = new Date().toISOString();
-        conversations.sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at));
-        renderConversationList();
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        // Parse SSE frames from the buffer.
+        const lines = buffer.split('\n');
+        buffer = lines.pop(); // keep incomplete line in buffer
+
+        for (const line of lines) {
+          if (line.startsWith('data:')) {
+            const raw = line.slice(5).trim();
+            if (raw) {
+              try {
+                const data = JSON.parse(raw);
+                handleStreamEvent(data);
+              } catch { /* ignore malformed JSON */ }
+            }
+          }
+        }
+      }
+    } catch (e) {
+      removeTypingIndicator();
+      // If stream didn't finalize, clean up
+      if (isSending) {
+        appendMessageBubble('assistant', 'Something went wrong. Please try again.');
+        isSending = false;
+        updateSendButton();
       }
     }
   }
@@ -1108,6 +1127,11 @@
     const div = document.createElement('div');
     div.textContent = str;
     return div.innerHTML;
+  }
+
+  function formatTimestamp(dateStr) {
+    const date = new Date(dateStr);
+    return date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
   }
 
   function formatDate(dateStr) {
