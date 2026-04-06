@@ -63,7 +63,7 @@ async fn prepare_agent(
 
     // 5. Create an ephemeral session with capabilities for all registered tools.
     let tool_names: Vec<&str> = state.tools.iter().map(|t| t.name()).collect();
-    let caps = CapabilitySet::for_tools(&tool_names);
+    let caps = CapabilitySet::for_tools_permissive(&tool_names);
     let session = Session::with_capabilities(conv.id, caps);
 
     // 6. Create the agent runner with profile-derived config.

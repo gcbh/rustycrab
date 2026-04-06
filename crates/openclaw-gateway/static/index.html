@@ -733,21 +733,13 @@
     if (!val) return;
     token = val;
     try {
-      await api('/api/health');
+      await api('/api/conversations');
       localStorage.setItem('openclaw_token', token);
       authModal.style.display = 'none';
       init();
     } catch {
-      // Health is public, so try listing conversations to test auth
-      try {
-        await api('/api/conversations');
-        localStorage.setItem('openclaw_token', token);
-        authModal.style.display = 'none';
-        init();
-      } catch {
-        authError.style.display = 'block';
-        token = '';
-      }
+      authError.style.display = 'block';
+      token = '';
     }
   });
 

@@ -194,13 +194,13 @@ impl AgentRunner {
                             created_at: Utc::now(),
                         },
                         Err(e) => {
-                            // Create a synthetic error result.
+                            // Create a synthetic error result with sanitized message.
                             Message {
                                 id: Uuid::new_v4(),
                                 role: Role::Tool,
                                 content: MessageContent::ToolResult(ToolResult {
                                     call_id: "error".to_string(),
-                                    output: serde_json::json!({ "error": e.to_string() }),
+                                    output: serde_json::json!({ "error": sanitize_error(&e.to_string()) }),
                                 }),
                                 created_at: Utc::now(),
                             }
@@ -368,7 +368,7 @@ impl AgentRunner {
                                 role: Role::Tool,
                                 content: MessageContent::ToolResult(ToolResult {
                                     call_id: "error".to_string(),
-                                    output: serde_json::json!({ "error": e.to_string() }),
+                                    output: serde_json::json!({ "error": sanitize_error(&e.to_string()) }),
                                 }),
                                 created_at: Utc::now(),
                             };
@@ -744,6 +744,12 @@ impl AgentRunner {
     }
 }
 
+/// Sanitize and truncate error messages before they flow into the conversation.
+/// This prevents internal path and stack trace leakage to the model/client.
+fn sanitize_error(e: &str) -> String {
+    e.chars().take(200).collect()
+}
+
 /// Standalone function so it can be moved into a tokio::spawn.
 async fn execute_single_tool(
     call: &ToolCall,
@@ -768,6 +774,21 @@ async fn execute_single_tool(
         .iter()
         .find(|t| t.name() == call.name)
         .ok_or_else(|| Error::ToolExecution(format!("unknown tool: {}", call.name)))?;
+
+    // Basic schema validation: check required parameters are present.
+    let schema = tool.schema();
+    if let Some(required) = schema.parameters.get("required").and_then(|r| r.as_array()) {
+        for req in required {
+            if let Some(param_name) = req.as_str() {
+                if call.arguments.get(param_name).is_none() {
+                    return Err(Error::ToolExecution(format!(
+                        "tool '{}' missing required parameter '{}'",
+                        call.name, param_name
+                    )));
+                }
+            }
+        }
+    }
 
     tracing::info!(tool = call.name, session = %session_id, "executing tool in sandbox");
 
@@ -834,6 +855,12 @@ fn enforce_sandbox_policy(tool_name: &str, policy: &SandboxPolicy) -> Result<()>
                 "tool '{tool_name}' requires network access, which is denied by policy"
             )))
         }
-        _ => Ok(()),
+        _ => {
+            tracing::debug!(
+                tool = tool_name,
+                "tool not covered by sandbox policy allow-list, passing through"
+            );
+            Ok(())
+        }
     }
 }

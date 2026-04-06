@@ -63,6 +63,16 @@ struct TracerInner {
     compressions: u32,
 }
 
+/// Sanitize a tool name to prevent prompt injection via trace summaries.
+/// Only allows alphanumeric characters, underscores, and hyphens,
+/// and limits length to 64 characters.
+fn sanitize_tool_name(name: &str) -> String {
+    name.chars()
+        .filter(|c| c.is_alphanumeric() || *c == '_' || *c == '-')
+        .take(64)
+        .collect()
+}
+
 impl ExecutionTracer {
     pub fn new() -> Self {
         Self {
@@ -80,9 +90,13 @@ impl ExecutionTracer {
     }
 
     /// Record a tool execution outcome.
+    ///
+    /// Tool names are sanitized before recording to prevent prompt injection
+    /// when trace summaries are injected into system prompts.
     pub fn record(&self, trace: ToolTrace) {
         let mut inner = self.lock_inner();
-        let stats = inner.stats.entry(trace.tool_name.clone()).or_default();
+        let sanitized_name = sanitize_tool_name(&trace.tool_name);
+        let stats = inner.stats.entry(sanitized_name.clone()).or_default();
         stats.calls += 1;
         stats.total_duration += trace.duration;
         if trace.success {
@@ -90,7 +104,11 @@ impl ExecutionTracer {
         } else {
             stats.failures += 1;
         }
-        inner.traces.push(trace);
+        let sanitized_trace = ToolTrace {
+            tool_name: sanitized_name,
+            ..trace
+        };
+        inner.traces.push(sanitized_trace);
     }
 
     /// Increment the iteration counter.
