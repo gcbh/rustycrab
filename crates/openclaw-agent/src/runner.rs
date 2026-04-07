@@ -160,6 +160,8 @@ impl AgentRunner {
                 return Err(Error::Auth("session expired during execution".into()));
             }
 
+            tracing::info!(iteration, total_messages = conv.messages.len(), "agent loop iteration");
+
             // Sliding window: drop oldest messages when context exceeds budget.
             // No LLM call — the agent is responsible for saving important
             // facts via the memory_save tool before they scroll out.
@@ -180,11 +182,17 @@ impl AgentRunner {
             // Handle tool calls (single or multi).
             if message.content.has_tool_calls() {
                 let calls = message.content.tool_calls();
+                let tool_names: Vec<&str> = calls.iter().map(|c| c.name.as_str()).collect();
                 tracing::info!(
                     iteration,
                     tool_count = calls.len(),
+                    tools = ?tool_names,
                     "executing tool calls"
                 );
+
+                for call in &calls {
+                    tracing::info!(tool = %call.name, call_id = %call.id, "tool call started");
+                }
 
                 // Execute all tool calls in parallel, recording traces.
                 let results = self
@@ -203,21 +211,24 @@ impl AgentRunner {
                 // Push all results as messages.
                 for (tool_name, call_id, result) in results {
                     let tool_msg = match result {
-                        Ok(tr) => Message {
-                            id: Uuid::new_v4(),
-                            role: Role::Tool,
-                            content: MessageContent::ToolResult(tr),
-                            created_at: Utc::now(),
-                        },
+                        Ok(tr) => {
+                            tracing::info!(tool = %tool_name, call_id = %call_id, "tool call succeeded");
+                            Message {
+                                id: Uuid::new_v4(),
+                                role: Role::Tool,
+                                content: MessageContent::ToolResult(tr),
+                                created_at: Utc::now(),
+                            }
+                        }
                         Err(e) => {
-                            // Create a synthetic error result with sanitized message.
-                            let _ = tool_name; // available if needed for logging
+                            let err_str = sanitize_error(&e.to_string());
+                            tracing::warn!(tool = %tool_name, call_id = %call_id, error = %err_str, "tool call failed");
                             Message {
                                 id: Uuid::new_v4(),
                                 role: Role::Tool,
                                 content: MessageContent::ToolResult(ToolResult {
                                     call_id,
-                                    output: serde_json::json!({ "error": sanitize_error(&e.to_string()) }),
+                                    output: serde_json::json!({ "error": err_str }),
                                 }),
                                 created_at: Utc::now(),
                             }
@@ -341,14 +352,17 @@ impl AgentRunner {
             // Handle tool calls.
             if message.content.has_tool_calls() {
                 let calls = message.content.tool_calls();
+                let tool_names: Vec<&str> = calls.iter().map(|c| c.name.as_str()).collect();
                 tracing::info!(
                     iteration,
                     tool_count = calls.len(),
+                    tools = ?tool_names,
                     "executing tool calls"
                 );
 
                 // Emit start events.
                 for call in &calls {
+                    tracing::info!(tool = %call.name, call_id = %call.id, "tool call started");
                     on_event(AgentEvent::ToolCallStart {
                         tool_name: call.name.clone(),
                         call_id: call.id.clone(),
@@ -370,6 +384,7 @@ impl AgentRunner {
                 for (tool_name, call_id, result) in results {
                     let (tool_msg, success, error_message) = match result {
                         Ok(tr) => {
+                            tracing::info!(tool = %tool_name, call_id = %call_id, "tool call succeeded");
                             let msg = Message {
                                 id: Uuid::new_v4(),
                                 role: Role::Tool,
@@ -380,6 +395,7 @@ impl AgentRunner {
                         }
                         Err(e) => {
                             let err_str = sanitize_error(&e.to_string());
+                            tracing::warn!(tool = %tool_name, call_id = %call_id, error = %err_str, "tool call failed");
                             let msg = Message {
                                 id: Uuid::new_v4(),
                                 role: Role::Tool,
