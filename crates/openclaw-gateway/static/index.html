@@ -364,36 +364,74 @@
   }
   .message.user .message-meta { text-align: right; }
 
-  /* Agent status bar (shown during orchestration) */
-  .agent-status {
+  /* Agent activity log — HIG grouped inset list style */
+  .agent-activity {
+    max-width: 85%;
+    margin: 8px 0;
+    border-radius: var(--radius-sm);
+    background: var(--bg-secondary);
+    overflow: hidden;
+    animation: fadeIn var(--transition-fast);
+  }
+  .agent-activity-header {
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 8px 16px;
-    margin: 4px 0;
-    font-size: 12px;
-    color: var(--text-secondary);
-    border-radius: var(--radius-sm);
-    background: var(--bg-grouped);
-    animation: fadeIn 0.15s ease;
-    max-width: 85%;
+    padding: 10px 16px 6px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-tertiary);
   }
-  .agent-status .status-icon {
+  .agent-activity-header .spinner {
+    width: 14px;
+    height: 14px;
+    border: 2px solid var(--text-quaternary);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  .agent-activity-items {
+    padding: 2px 0 6px;
+    max-height: 200px;
+    overflow-y: auto;
+  }
+  .activity-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 5px 16px;
+    font-size: 13px;
+    color: var(--text-secondary);
+    animation: fadeIn 0.1s ease;
+  }
+  .activity-item .status-icon {
     flex-shrink: 0;
     width: 14px;
     height: 14px;
   }
-  .agent-status .status-icon.spinning {
-    animation: spin 1s linear infinite;
+  .activity-item .status-icon.spinning {
+    animation: spin 0.8s linear infinite;
   }
   @keyframes spin {
     from { transform: rotate(0deg); }
     to { transform: rotate(360deg); }
   }
-  .agent-status.tool-start { color: var(--tint); }
-  .agent-status.tool-end { color: #34c759; }
-  .agent-status.tool-error { color: #ff3b30; }
-  .agent-status.thinking { color: var(--text-tertiary); }
+  .activity-item.tool-start { color: var(--accent); }
+  .activity-item.tool-end { color: #34c759; }
+  @media (prefers-color-scheme: dark) {
+    .activity-item.tool-end { color: #30d158; }
+  }
+  .activity-item.tool-error { color: #ff3b30; }
+  @media (prefers-color-scheme: dark) {
+    .activity-item.tool-error { color: #ff453a; }
+  }
+  .activity-item.thinking { color: var(--text-tertiary); }
+  .activity-item .elapsed {
+    margin-left: auto;
+    font-size: 12px;
+    color: var(--text-tertiary);
+    font-variant-numeric: tabular-nums;
+  }
 
   /* Typing indicator */
   .typing-indicator {
@@ -875,28 +913,77 @@
     'thinking': '<svg class="status-icon spinning" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10" stroke-dasharray="31.4 31.4" stroke-dashoffset="10"/></svg>',
   };
 
+  let activityStartTime = null;
+  let activeToolTimers = {};
+
+  function getActivityLog() {
+    let container = msgContainer.querySelector('.agent-activity');
+    if (!container) {
+      removeTypingIndicator();
+      activityStartTime = Date.now();
+      activeToolTimers = {};
+      container = document.createElement('div');
+      container.className = 'agent-activity';
+      container.innerHTML = `
+        <div class="agent-activity-header">
+          <div class="spinner"></div>
+          Working
+        </div>
+        <div class="agent-activity-items"></div>`;
+      msgContainer.appendChild(container);
+    }
+    return container.querySelector('.agent-activity-items');
+  }
+
   function showAgentStatus(type, text, isActive) {
-    removeTypingIndicator();
-    let el = msgContainer.querySelector('.agent-status');
-    if (!el) {
-      el = document.createElement('div');
-      el.className = 'agent-status';
-      msgContainer.appendChild(el);
+    const items = getActivityLog();
+
+    // For tool-end/tool-error, update the matching tool-start item
+    if ((type === 'tool-end' || type === 'tool-error') && text) {
+      const toolName = text.replace(/ done$/, '').replace(/:.*/, '');
+      const startItem = items.querySelector(`.activity-item.tool-start[data-tool="${toolName}"]`);
+      if (startItem) {
+        startItem.className = `activity-item ${type}`;
+        startItem.querySelector('.status-icon').outerHTML = STATUS_ICONS[type];
+        startItem.querySelector('.label').textContent = text;
+        const elapsed = startItem.dataset.startedAt
+          ? ((Date.now() - parseInt(startItem.dataset.startedAt)) / 1000).toFixed(1) + 's'
+          : '';
+        const elapsedEl = startItem.querySelector('.elapsed');
+        if (elapsedEl) elapsedEl.textContent = elapsed;
+        scrollToBottom();
+        return;
+      }
     }
-    el.className = `agent-status ${type}`;
-    el.innerHTML = `${STATUS_ICONS[type] || ''}<span>${escapeHtml(text)}</span>`;
+
+    const item = document.createElement('div');
+    item.className = `activity-item ${type}`;
+    const toolName = text.replace(/ done$/, '').replace(/^Using /, '');
+    item.dataset.tool = toolName;
+    item.dataset.startedAt = Date.now().toString();
+    item.innerHTML = `${STATUS_ICONS[type] || ''}<span class="label">${escapeHtml(text)}</span><span class="elapsed"></span>`;
+    items.appendChild(item);
+
+    // Update elapsed time for active items
+    if (isActive && type === 'tool-start') {
+      const timer = setInterval(() => {
+        if (!document.contains(item)) { clearInterval(timer); return; }
+        const started = parseInt(item.dataset.startedAt);
+        item.querySelector('.elapsed').textContent = ((Date.now() - started) / 1000).toFixed(1) + 's';
+      }, 100);
+      activeToolTimers[toolName] = timer;
+    }
+
     scrollToBottom();
-    // Auto-clear completed statuses after a short delay
-    if (!isActive) {
-      setTimeout(() => {
-        if (el.classList.contains(type)) el.remove();
-      }, 2000);
-    }
   }
 
   function removeAgentStatus() {
-    const el = msgContainer.querySelector('.agent-status');
+    // Clear all timers
+    Object.values(activeToolTimers).forEach(t => clearInterval(t));
+    activeToolTimers = {};
+    const el = msgContainer.querySelector('.agent-activity');
     if (el) el.remove();
+    activityStartTime = null;
   }
 
   // ── Conversations ─────────────────────────────────────────
