@@ -8,7 +8,7 @@ use openclaw_core::session::Session;
 use openclaw_core::types::{
     Conversation, Message, MessageContent, Role, ToolCall, ToolResult, ToolSchema,
 };
-use openclaw_core::{Error, Result, Tool};
+use openclaw_core::{Error, Result, Tool, ToolErrorKind};
 use uuid::Uuid;
 
 use crate::sandbox::{Sandbox, SandboxPolicy};
@@ -33,6 +33,7 @@ pub enum AgentEvent {
         tool_name: String,
         call_id: String,
         success: bool,
+        error_message: Option<String>,
     },
     /// The agent is reflecting after repeated errors.
     Reflecting,
@@ -178,7 +179,7 @@ impl AgentRunner {
                     .await;
 
                 // Track errors for reflection.
-                let had_errors = results.iter().any(|r| {
+                let had_errors = results.iter().any(|(_, _, r)| {
                     if let Ok(tr) = r {
                         tr.output.get("error").is_some()
                     } else {
@@ -187,7 +188,7 @@ impl AgentRunner {
                 });
 
                 // Push all results as messages.
-                for result in results {
+                for (tool_name, call_id, result) in results {
                     let tool_msg = match result {
                         Ok(tr) => Message {
                             id: Uuid::new_v4(),
@@ -197,11 +198,12 @@ impl AgentRunner {
                         },
                         Err(e) => {
                             // Create a synthetic error result with sanitized message.
+                            let _ = tool_name; // available if needed for logging
                             Message {
                                 id: Uuid::new_v4(),
                                 role: Role::Tool,
                                 content: MessageContent::ToolResult(ToolResult {
-                                    call_id: "error".to_string(),
+                                    call_id,
                                     output: serde_json::json!({ "error": sanitize_error(&e.to_string()) }),
                                 }),
                                 created_at: Utc::now(),
@@ -344,7 +346,7 @@ impl AgentRunner {
                     .execute_tools_parallel_traced(calls, session, &tracer)
                     .await;
 
-                let had_errors = results.iter().any(|r| {
+                let had_errors = results.iter().any(|(_, _, r)| {
                     if let Ok(tr) = r {
                         tr.output.get("error").is_some()
                     } else {
@@ -352,34 +354,36 @@ impl AgentRunner {
                     }
                 });
 
-                for result in results {
-                    let (tool_msg, tool_name, call_id, success) = match result {
+                for (tool_name, call_id, result) in results {
+                    let (tool_msg, success, error_message) = match result {
                         Ok(tr) => {
                             let msg = Message {
                                 id: Uuid::new_v4(),
                                 role: Role::Tool,
-                                content: MessageContent::ToolResult(tr.clone()),
+                                content: MessageContent::ToolResult(tr),
                                 created_at: Utc::now(),
                             };
-                            (msg, String::new(), tr.call_id, true)
+                            (msg, true, None)
                         }
                         Err(e) => {
+                            let err_str = sanitize_error(&e.to_string());
                             let msg = Message {
                                 id: Uuid::new_v4(),
                                 role: Role::Tool,
                                 content: MessageContent::ToolResult(ToolResult {
-                                    call_id: "error".to_string(),
-                                    output: serde_json::json!({ "error": sanitize_error(&e.to_string()) }),
+                                    call_id: call_id.clone(),
+                                    output: serde_json::json!({ "error": err_str }),
                                 }),
                                 created_at: Utc::now(),
                             };
-                            (msg, String::new(), "error".to_string(), false)
+                            (msg, false, Some(err_str))
                         }
                     };
                     on_event(AgentEvent::ToolCallEnd {
                         tool_name,
                         call_id,
                         success,
+                        error_message,
                     });
                     conv.messages.push(tool_msg);
                 }
@@ -435,12 +439,16 @@ impl AgentRunner {
     ///
     /// Each tool call is retried up to `max_tool_retries` times on failure
     /// before the error is surfaced to the model.
+    /// Execute multiple tool calls in parallel, recording execution traces.
+    ///
+    /// Returns `(tool_name, call_id, result)` tuples so callers always have
+    /// tool identity even on the error path.
     async fn execute_tools_parallel_traced(
         &self,
         calls: Vec<&ToolCall>,
         session: &Session,
         tracer: &ExecutionTracer,
-    ) -> Vec<Result<ToolResult>> {
+    ) -> Vec<(String, String, Result<ToolResult>)> {
         let max_retries = self.config.max_tool_retries;
 
         if calls.len() == 1 {
@@ -461,12 +469,15 @@ impl AgentRunner {
                 duration: start.elapsed(),
                 error: result.as_ref().err().map(|e| e.to_string()),
             });
-            return vec![result];
+            return vec![(call.name.clone(), call.id.clone(), result)];
         }
 
         // Spawn all tool executions concurrently.
         let mut handles = Vec::with_capacity(calls.len());
-        let call_names: Vec<String> = calls.iter().map(|c| c.name.clone()).collect();
+        let call_meta: Vec<(String, String)> = calls
+            .iter()
+            .map(|c| (c.name.clone(), c.id.clone()))
+            .collect();
 
         for call in calls {
             let call = call.clone();
@@ -486,30 +497,38 @@ impl AgentRunner {
                     max_retries,
                 )
                 .await;
-                (result, call.name.clone(), start.elapsed())
+                (result, call.name.clone(), call.id.clone(), start.elapsed())
             }));
         }
 
         let mut results = Vec::with_capacity(handles.len());
         for (i, handle) in handles.into_iter().enumerate() {
             match handle.await {
-                Ok((result, name, duration)) => {
+                Ok((result, name, call_id, duration)) => {
                     tracer.record(ToolTrace {
-                        tool_name: name,
+                        tool_name: name.clone(),
                         success: result.is_ok(),
                         duration,
                         error: result.as_ref().err().map(|e| e.to_string()),
                     });
-                    results.push(result);
+                    results.push((name, call_id, result));
                 }
                 Err(e) => {
+                    let (name, call_id) = call_meta
+                        .get(i)
+                        .cloned()
+                        .unwrap_or_default();
                     tracer.record(ToolTrace {
-                        tool_name: call_names.get(i).cloned().unwrap_or_default(),
+                        tool_name: name.clone(),
                         success: false,
                         duration: std::time::Duration::ZERO,
                         error: Some(format!("task panicked: {e}")),
                     });
-                    results.push(Err(Error::Internal(format!("task panicked: {e}"))));
+                    results.push((
+                        name,
+                        call_id,
+                        Err(Error::Internal(format!("task panicked: {e}"))),
+                    ));
                 }
             }
         }
@@ -703,6 +722,17 @@ async fn execute_with_retries(
                 if matches!(e, Error::Auth(_)) {
                     return Err(e);
                 }
+                // Don't retry deterministic tool errors.
+                if let Error::ToolExecution(ref te) = e {
+                    if matches!(
+                        te.kind,
+                        ToolErrorKind::InvalidInput
+                            | ToolErrorKind::NotFound
+                            | ToolErrorKind::PermissionDenied
+                    ) {
+                        return Err(e);
+                    }
+                }
                 tracing::warn!(
                     tool = call.name,
                     attempt = attempt + 1,
@@ -745,7 +775,7 @@ async fn execute_single_tool(
     let tool = tools
         .iter()
         .find(|t| t.name() == call.name)
-        .ok_or_else(|| Error::ToolExecution(format!("unknown tool: {}", call.name)))?;
+        .ok_or_else(|| Error::ToolExecution(format!("unknown tool: {}", call.name).into()))?;
 
     // Basic schema validation: check required parameters are present.
     let schema = tool.schema();
@@ -756,7 +786,7 @@ async fn execute_single_tool(
                     return Err(Error::ToolExecution(format!(
                         "tool '{}' missing required parameter '{}'",
                         call.name, param_name
-                    )));
+                    ).into()));
                 }
             }
         }
@@ -794,7 +824,7 @@ async fn execute_single_tool(
     .map_err(|_| Error::ToolExecution(format!(
         "tool '{}' exceeded sandbox timeout of {}s",
         call.name, policy.timeout_secs
-    )))??;
+    ).into()))??;
 
     Ok(ToolResult {
         call_id: call.id.clone(),

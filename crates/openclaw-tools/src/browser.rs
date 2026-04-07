@@ -79,7 +79,7 @@ impl Tool for BrowserTool {
 
                 // SSRF protection
                 security::validate_url(url)
-                    .map_err(|e| openclaw_core::Error::ToolExecution(e))?;
+                    .map_err(|e| openclaw_core::Error::ToolExecution(e.into()))?;
 
                 if let Some(ws_url) = &browser_ws_url {
                     // Send navigate command to browser automation endpoint
@@ -89,12 +89,12 @@ impl Tool for BrowserTool {
                         .json(&json!({"action": "navigate", "url": url}))
                         .send()
                         .await
-                        .map_err(|e| openclaw_core::Error::ToolExecution(format!("browser navigate failed: {e}")))?;
+                        .map_err(|e| openclaw_core::Error::ToolExecution(format!("browser navigate failed: {e}").into()))?;
 
                     let body = resp
                         .text()
                         .await
-                        .map_err(|e| openclaw_core::Error::ToolExecution(format!("failed to read response: {e}")))?;
+                        .map_err(|e| openclaw_core::Error::ToolExecution(format!("failed to read response: {e}").into()))?;
 
                     Ok(json!({
                         "action": "navigate",
@@ -109,13 +109,13 @@ impl Tool for BrowserTool {
                         .get(url)
                         .send()
                         .await
-                        .map_err(|e| openclaw_core::Error::ToolExecution(format!("failed to fetch URL: {e}")))?;
+                        .map_err(|e| openclaw_core::Error::ToolExecution(format!("failed to fetch URL: {e}").into()))?;
 
                     let status = resp.status().as_u16();
                     let body = resp
                         .text()
                         .await
-                        .map_err(|e| openclaw_core::Error::ToolExecution(format!("failed to read response: {e}")))?;
+                        .map_err(|e| openclaw_core::Error::ToolExecution(format!("failed to read response: {e}").into()))?;
 
                     Ok(json!({
                         "action": "navigate",
@@ -133,7 +133,7 @@ impl Tool for BrowserTool {
                 // SSRF protection for content URLs
                 if let Some(u) = url {
                     security::validate_url(u)
-                        .map_err(|e| openclaw_core::Error::ToolExecution(e))?;
+                        .map_err(|e| openclaw_core::Error::ToolExecution(e.into()))?;
                 }
 
                 if let Some(ws_url) = &browser_ws_url {
@@ -148,12 +148,12 @@ impl Tool for BrowserTool {
                         .json(&payload)
                         .send()
                         .await
-                        .map_err(|e| openclaw_core::Error::ToolExecution(format!("browser content failed: {e}")))?;
+                        .map_err(|e| openclaw_core::Error::ToolExecution(format!("browser content failed: {e}").into()))?;
 
                     let body = resp
                         .text()
                         .await
-                        .map_err(|e| openclaw_core::Error::ToolExecution(format!("failed to read response: {e}")))?;
+                        .map_err(|e| openclaw_core::Error::ToolExecution(format!("failed to read response: {e}").into()))?;
 
                     Ok(json!({
                         "action": "content",
@@ -167,12 +167,12 @@ impl Tool for BrowserTool {
                         .get(u)
                         .send()
                         .await
-                        .map_err(|e| openclaw_core::Error::ToolExecution(format!("failed to fetch URL: {e}")))?;
+                        .map_err(|e| openclaw_core::Error::ToolExecution(format!("failed to fetch URL: {e}").into()))?;
 
                     let body = resp
                         .text()
                         .await
-                        .map_err(|e| openclaw_core::Error::ToolExecution(format!("failed to read response: {e}")))?;
+                        .map_err(|e| openclaw_core::Error::ToolExecution(format!("failed to read response: {e}").into()))?;
 
                     Ok(json!({
                         "action": "content",
@@ -203,12 +203,12 @@ impl Tool for BrowserTool {
                     .json(&json!({"action": "click", "selector": selector}))
                     .send()
                     .await
-                    .map_err(|e| openclaw_core::Error::ToolExecution(format!("browser click failed: {e}")))?;
+                    .map_err(|e| openclaw_core::Error::ToolExecution(format!("browser click failed: {e}").into()))?;
 
                 let body = resp
                     .text()
                     .await
-                    .map_err(|e| openclaw_core::Error::ToolExecution(format!("failed to read response: {e}")))?;
+                    .map_err(|e| openclaw_core::Error::ToolExecution(format!("failed to read response: {e}").into()))?;
 
                 Ok(json!({
                     "action": "click",
@@ -230,12 +230,12 @@ impl Tool for BrowserTool {
                     .json(&json!({"action": "screenshot"}))
                     .send()
                     .await
-                    .map_err(|e| openclaw_core::Error::ToolExecution(format!("browser screenshot failed: {e}")))?;
+                    .map_err(|e| openclaw_core::Error::ToolExecution(format!("browser screenshot failed: {e}").into()))?;
 
                 let body = resp
                     .text()
                     .await
-                    .map_err(|e| openclaw_core::Error::ToolExecution(format!("failed to read response: {e}")))?;
+                    .map_err(|e| openclaw_core::Error::ToolExecution(format!("failed to read response: {e}").into()))?;
 
                 Ok(json!({
                     "action": "screenshot",
@@ -260,12 +260,12 @@ impl Tool for BrowserTool {
                     .json(&json!({"action": "evaluate", "expression": expression}))
                     .send()
                     .await
-                    .map_err(|e| openclaw_core::Error::ToolExecution(format!("browser evaluate failed: {e}")))?;
+                    .map_err(|e| openclaw_core::Error::ToolExecution(format!("browser evaluate failed: {e}").into()))?;
 
                 let body = resp
                     .text()
                     .await
-                    .map_err(|e| openclaw_core::Error::ToolExecution(format!("failed to read response: {e}")))?;
+                    .map_err(|e| openclaw_core::Error::ToolExecution(format!("failed to read response: {e}").into()))?;
 
                 Ok(json!({
                     "action": "evaluate",
@@ -276,7 +276,7 @@ impl Tool for BrowserTool {
             }
             _ => Err(openclaw_core::Error::ToolExecution(format!(
                 "unknown browser action: {action}"
-            ))),
+            ).into())),
         }
     }
 }
