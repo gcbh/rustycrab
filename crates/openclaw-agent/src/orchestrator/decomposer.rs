@@ -54,17 +54,25 @@ impl Decomposer {
     /// Returns a list of `SubTask`s with dependency information.
     /// If decomposition fails or the request is simple enough,
     /// returns a single sub-task wrapping the original request.
-    pub async fn decompose(&self, user_request: &str) -> Result<Vec<SubTask>> {
-        let prompt = DECOMPOSE_PROMPT.replace(
+    pub async fn decompose(&self, user_request: &str, context: Option<&str>) -> Result<Vec<SubTask>> {
+        let decompose_instructions = DECOMPOSE_PROMPT.replace(
             "{max_tasks}",
             &self.config.max_sub_tasks.to_string(),
         );
+
+        // Combine agent system context with decomposition instructions so the
+        // model understands the agent's identity, available tools, and
+        // permissions when planning sub-tasks.
+        let system_prompt = match context {
+            Some(ctx) => format!("{ctx}\n\n---\n\n{decompose_instructions}"),
+            None => decompose_instructions,
+        };
 
         let messages = vec![
             Message {
                 id: Uuid::new_v4(),
                 role: Role::System,
-                content: MessageContent::Text(prompt),
+                content: MessageContent::Text(system_prompt),
                 created_at: Utc::now(),
             },
             Message {

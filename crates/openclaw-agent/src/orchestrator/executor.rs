@@ -46,7 +46,11 @@ impl ParallelExecutor {
     /// Tasks with no dependencies run concurrently. Tasks with
     /// dependencies wait for their prerequisites to complete, then
     /// receive the prerequisite results as context.
-    pub async fn execute(&self, tasks: &[SubTask]) -> Vec<SubTaskResult> {
+    ///
+    /// The optional `system_context` carries the agent's identity, tool
+    /// permissions, and security policies so that sub-task model calls
+    /// understand they are operating within an authorized agent.
+    pub async fn execute(&self, tasks: &[SubTask], system_context: Option<&str>) -> Vec<SubTaskResult> {
         let mut results: HashMap<Uuid, SubTaskResult> = HashMap::new();
         let mut completed: HashSet<Uuid> = HashSet::new();
         let all_ids: HashSet<Uuid> = tasks.iter().map(|t| t.id).collect();
@@ -86,9 +90,10 @@ impl ParallelExecutor {
                 let tools = self.tools.clone();
                 let sandbox = self.sandbox.clone();
                 let config = self.config.clone();
+                let sys_ctx = system_context.map(|s| s.to_string());
 
                 handles.push(tokio::spawn(async move {
-                    execute_sub_task(&task, &dep_context, &provider, &tools, &sandbox, &config)
+                    execute_sub_task(&task, &dep_context, sys_ctx.as_deref(), &provider, &tools, &sandbox, &config)
                         .await
                 }));
             }
@@ -118,6 +123,7 @@ impl ParallelExecutor {
 async fn execute_sub_task(
     task: &SubTask,
     dep_context: &[String],
+    system_context: Option<&str>,
     provider: &Arc<dyn ModelProvider>,
     tools: &[Arc<dyn Tool>],
     sandbox: &Arc<dyn Sandbox>,
@@ -126,15 +132,20 @@ async fn execute_sub_task(
     // Build focused context for this sub-task.
     let mut messages = Vec::new();
 
-    // System context with dependency results.
+    // System context: agent identity/permissions + dependency results.
+    let mut system_parts = Vec::new();
+    if let Some(sys_ctx) = system_context {
+        system_parts.push(sys_ctx.to_string());
+    }
     if !dep_context.is_empty() {
         let ctx = dep_context.join("\n\n---\n\n");
+        system_parts.push(format!("Context from prerequisite tasks:\n{ctx}"));
+    }
+    if !system_parts.is_empty() {
         messages.push(Message {
             id: Uuid::new_v4(),
             role: Role::System,
-            content: MessageContent::Text(format!(
-                "Context from prerequisite tasks:\n{ctx}"
-            )),
+            content: MessageContent::Text(system_parts.join("\n\n---\n\n")),
             created_at: Utc::now(),
         });
     }
