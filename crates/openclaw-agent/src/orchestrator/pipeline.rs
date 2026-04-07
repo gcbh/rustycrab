@@ -131,7 +131,7 @@ impl OrchestrationPipeline {
     async fn run_moderate(
         &self,
         request: &str,
-        _context: Option<&str>,
+        context: Option<&str>,
     ) -> Result<PipelineResult> {
         let decomposer = Decomposer::new(self.provider.clone(), self.config.clone());
         let executor = ParallelExecutor::new(
@@ -142,12 +142,12 @@ impl OrchestrationPipeline {
         );
         let synthesizer = Synthesizer::new(self.provider.clone());
 
-        // Decompose.
-        let sub_tasks = decomposer.decompose(request).await?;
+        // Decompose (with system context so the model understands the agent's role).
+        let sub_tasks = decomposer.decompose(request, context).await?;
         let sub_task_count = sub_tasks.len();
 
-        // Execute in parallel.
-        let results = executor.execute(&sub_tasks).await;
+        // Execute in parallel (with system context for each sub-task).
+        let results = executor.execute(&sub_tasks, context).await;
 
         // Synthesize.
         let response = synthesizer.synthesize(request, &results).await?;
