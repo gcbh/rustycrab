@@ -246,9 +246,21 @@ async fn execute_tool_for_subtask(
         }
     };
 
-    let policy = SandboxPolicy::trusted();
+    // Use a restricted policy instead of trusted() to limit orchestrator sub-tasks.
+    let policy = SandboxPolicy {
+        allow_net: true,
+        allow_fs_read: true,
+        allow_fs_write: false,
+        allow_spawn: false,
+        ..SandboxPolicy::default()
+    };
+
+    // Enforce sandbox check — fail the tool call if denied.
     if let Err(e) = sandbox.execute(&call.name, call.arguments.clone(), &policy).await {
-        tracing::warn!(tool = call.name, "sandbox check failed: {e}");
+        return ToolResult {
+            call_id: call.id.clone(),
+            output: serde_json::json!({ "error": format!("sandbox denied tool '{}': {e}", call.name) }),
+        };
     }
 
     let mut last_err = None;
