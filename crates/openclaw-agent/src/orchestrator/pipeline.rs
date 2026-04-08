@@ -151,8 +151,8 @@ impl OrchestrationPipeline {
         // Execute in parallel (with system context for each sub-task).
         let results = executor.execute(&sub_tasks, context).await;
 
-        // Synthesize.
-        let response = synthesizer.synthesize(request, &results).await?;
+        // Synthesize (with system context so the model doesn't second-guess tool outputs).
+        let response = synthesizer.synthesize(request, &results, context).await?;
 
         Ok(PipelineResult {
             response,
@@ -176,9 +176,9 @@ impl OrchestrationPipeline {
         // Run moderate pipeline first.
         let mut result = self.run_moderate(request, context).await?;
 
-        // Self-refinement.
+        // Self-refinement (with system context so the critic knows the agent has tool access).
         let refiner = RefinementLoop::new(self.provider.clone(), self.config.clone());
-        let (refined, iterations) = refiner.refine(request, &result.response).await?;
+        let (refined, iterations) = refiner.refine(request, &result.response, context).await?;
 
         result.response = refined;
         result.refinement_iterations = iterations;
@@ -204,7 +204,7 @@ impl OrchestrationPipeline {
         // If high confidence, use the voted answer directly and refine.
         if vote.confidence >= 0.8 {
             let refiner = RefinementLoop::new(self.provider.clone(), self.config.clone());
-            let (refined, iterations) = refiner.refine(request, &vote.answer).await?;
+            let (refined, iterations) = refiner.refine(request, &vote.answer, context).await?;
 
             return Ok(PipelineResult {
                 response: refined,

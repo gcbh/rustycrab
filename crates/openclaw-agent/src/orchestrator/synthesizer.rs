@@ -41,10 +41,13 @@ impl Synthesizer {
     ///
     /// Takes the original user request and all sub-task results,
     /// then makes a model call to produce a coherent answer.
+    /// The optional `context` carries agent identity so the model
+    /// doesn't second-guess legitimate tool outputs.
     pub async fn synthesize(
         &self,
         original_request: &str,
         results: &[SubTaskResult],
+        context: Option<&str>,
     ) -> Result<String> {
         // If there's only one successful result, just return it directly.
         let successful: Vec<&SubTaskResult> = results.iter().filter(|r| r.success).collect();
@@ -71,12 +74,21 @@ impl Synthesizer {
             .replace("{request}", &format!("<user_input>\n{original_request}\n</user_input>"))
             .replace("{results}", &format!("<agent_response>\n{results_text}\n</agent_response>"));
 
-        let messages = vec![Message {
+        let mut messages = Vec::new();
+        if let Some(ctx) = context {
+            messages.push(Message {
+                id: Uuid::new_v4(),
+                role: Role::System,
+                content: MessageContent::Text(ctx.to_string()),
+                created_at: Utc::now(),
+            });
+        }
+        messages.push(Message {
             id: Uuid::new_v4(),
             role: Role::User,
             content: MessageContent::Text(prompt),
             created_at: Utc::now(),
-        }];
+        });
 
         let response = self.provider.chat(&messages, &[]).await?;
         Ok(response
