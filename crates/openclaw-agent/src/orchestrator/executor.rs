@@ -257,12 +257,14 @@ async fn execute_tool_for_subtask(
         }
     };
 
-    // Use a restricted policy instead of trusted() to limit orchestrator sub-tasks.
+    // Sub-tasks need the same capabilities as the main agent loop —
+    // writing files (e.g. saving downloaded documents) and spawning
+    // processes (e.g. pip install) are required for real task completion.
     let policy = SandboxPolicy {
         allow_net: true,
         allow_fs_read: true,
-        allow_fs_write: false,
-        allow_spawn: false,
+        allow_fs_write: true,
+        allow_spawn: true,
         ..SandboxPolicy::default()
     };
 

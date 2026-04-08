@@ -15,8 +15,12 @@ use crate::sandbox::{Sandbox, SandboxPolicy};
 use crate::trace::{ExecutionTracer, ToolTrace};
 
 /// Tool names whose output comes from external/untrusted sources (web pages,
-/// email, search results, etc.). Their output is wrapped with adversarial-content
+/// search results, etc.). Their output is wrapped with adversarial-content
 /// markers so the model treats it as data rather than instructions.
+///
+/// Note: `gmail` is intentionally excluded — the user's own email is a
+/// trusted data source and fencing it causes the model to ignore actionable
+/// content like document lists and account details.
 const EXTERNAL_CONTENT_TOOLS: &[&str] = &[
     "browser",
     "http_request",
@@ -24,7 +28,6 @@ const EXTERNAL_CONTENT_TOOLS: &[&str] = &[
     "web_fetch",
     "web_search",
     "x_search",
-    "gmail",
 ];
 
 /// Events emitted by the agent loop during streaming execution.
@@ -633,16 +636,14 @@ impl AgentRunner {
         });
     }
 
-    /// Inject a reflection message when the agent keeps hitting errors.
-    /// This gives the model a chance to step back and try a different approach.
+    /// Inject a brief nudge when the agent hits repeated errors.
     fn inject_reflection(&self, conv: &mut Conversation) {
         conv.messages.push(Message {
             id: Uuid::new_v4(),
             role: Role::User,
             content: MessageContent::Text(
-                "The previous tool calls produced errors. Please stop and reflect: \
-                 What went wrong? What is a different approach you could take? \
-                 Think step by step before making your next tool call."
+                "The previous tool calls failed. Try a different approach or \
+                 different arguments and continue working on the task."
                     .to_string(),
             ),
             created_at: Utc::now(),
