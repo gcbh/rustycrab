@@ -127,7 +127,9 @@ impl OrchestrationPipeline {
         })
     }
 
-    /// Moderate pipeline: decompose + parallel execute + synthesize.
+    /// Moderate pipeline: decompose + parallel execute + synthesize,
+    /// with a continuation loop that re-decomposes remaining work
+    /// until the task is complete or max_recursion_depth is reached.
     async fn run_moderate(
         &self,
         request: &str,
@@ -141,30 +143,132 @@ impl OrchestrationPipeline {
             self.config.clone(),
         );
         let synthesizer = Synthesizer::new(self.provider.clone());
-
-        // Decompose (with system context and tool names so the model
-        // understands the agent's role and can produce accurate tool hints).
         let tool_names: Vec<&str> = self.tools.iter().map(|t| t.name()).collect();
-        let sub_tasks = decomposer.decompose(request, context, &tool_names).await?;
-        let sub_task_count = sub_tasks.len();
 
-        // Execute in parallel (with system context for each sub-task).
-        let results = executor.execute(&sub_tasks, context).await;
+        let max_cycles = self.config.max_recursion_depth.max(1);
+        let mut total_sub_tasks = 0;
+        let mut accumulated_results = Vec::new();
+        let mut stages = Vec::new();
 
-        // Synthesize (with system context so the model doesn't second-guess tool outputs).
-        let response = synthesizer.synthesize(request, &results, context).await?;
+        for cycle in 0..max_cycles {
+            // Build the decomposition request: on the first cycle, use the
+            // original request. On subsequent cycles, ask the decomposer to
+            // plan the remaining work given what has been completed so far.
+            let decompose_request = if cycle == 0 {
+                request.to_string()
+            } else {
+                let progress = synthesizer
+                    .synthesize(request, &accumulated_results, context)
+                    .await?;
+                format!(
+                    "Original request:\n{request}\n\n\
+                     Progress so far:\n{progress}\n\n\
+                     The above work is incomplete. Decompose ONLY the remaining \
+                     tasks that have not been completed yet. Do not repeat work \
+                     that is already done."
+                )
+            };
+
+            // Decompose.
+            let sub_tasks = decomposer
+                .decompose(&decompose_request, context, &tool_names)
+                .await?;
+            total_sub_tasks += sub_tasks.len();
+            stages.push(PipelineStage::Decompose);
+
+            // Execute.
+            let results = executor.execute(&sub_tasks, context).await;
+            stages.push(PipelineStage::Execute);
+            accumulated_results.extend(results);
+
+            // Check if the task is complete.
+            if cycle + 1 < max_cycles {
+                let is_complete = self
+                    .check_completion(request, &accumulated_results, context)
+                    .await?;
+                if is_complete {
+                    tracing::info!(cycle = cycle + 1, "task complete after cycle");
+                    break;
+                }
+                tracing::info!(cycle = cycle + 1, "task incomplete, continuing");
+            }
+        }
+
+        // Final synthesis across all accumulated results.
+        stages.push(PipelineStage::Synthesize);
+        let response = synthesizer
+            .synthesize(request, &accumulated_results, context)
+            .await?;
 
         Ok(PipelineResult {
             response,
-            stages_executed: vec![
-                PipelineStage::Decompose,
-                PipelineStage::Execute,
-                PipelineStage::Synthesize,
-            ],
-            sub_task_count,
+            stages_executed: stages,
+            sub_task_count: total_sub_tasks,
             vote: None,
             refinement_iterations: 0,
         })
+    }
+
+    /// Quick model call to check whether the task is complete.
+    async fn check_completion(
+        &self,
+        request: &str,
+        results: &[openclaw_core::orchestration::SubTaskResult],
+        context: Option<&str>,
+    ) -> Result<bool> {
+        use chrono::Utc;
+        use openclaw_core::types::{Message, MessageContent, Role};
+        use uuid::Uuid;
+
+        let mut results_summary = String::new();
+        for (i, r) in results.iter().enumerate() {
+            if r.success {
+                // Truncate long outputs to keep the completion check cheap.
+                let output = if r.output.len() > 500 {
+                    format!("{}...", &r.output[..500])
+                } else {
+                    r.output.clone()
+                };
+                results_summary.push_str(&format!("- Task {}: {}\n", i + 1, output));
+            } else {
+                let err = r.error.as_deref().unwrap_or("failed");
+                results_summary.push_str(&format!("- Task {} FAILED: {}\n", i + 1, err));
+            }
+        }
+
+        let prompt = format!(
+            "Original request:\n{request}\n\n\
+             Completed work:\n{results_summary}\n\n\
+             Has the original request been FULLY completed? Consider whether \
+             all requested items have been retrieved/processed.\n\
+             Answer with exactly one word: COMPLETE or INCOMPLETE"
+        );
+
+        let mut messages = Vec::new();
+        if let Some(ctx) = context {
+            messages.push(Message {
+                id: Uuid::new_v4(),
+                role: Role::System,
+                content: MessageContent::Text(ctx.to_string()),
+                created_at: Utc::now(),
+            });
+        }
+        messages.push(Message {
+            id: Uuid::new_v4(),
+            role: Role::User,
+            content: MessageContent::Text(prompt),
+            created_at: Utc::now(),
+        });
+
+        let response = self.provider.chat(&messages, &[]).await?;
+        let text = response
+            .message
+            .content
+            .as_text()
+            .unwrap_or("")
+            .to_uppercase();
+
+        Ok(text.contains("COMPLETE") && !text.contains("INCOMPLETE"))
     }
 
     /// Complex pipeline: decompose + execute + synthesize + refine.
