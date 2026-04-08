@@ -166,13 +166,16 @@ async fn execute_sub_task(
     });
 
     // Get available tool schemas.
+    // When a tool_hint is set, expose the hinted tool plus utility tools
+    // (exec, code_execution) so the model can install dependencies or
+    // work around failures without being locked to a single tool.
     let schemas: Vec<ToolSchema> = if task.requires_reasoning {
         tools.iter().map(|t| t.schema()).collect()
     } else if let Some(ref hint) = task.tool_hint {
-        // Only expose the hinted tool for focused tool calls.
+        const UTILITY_TOOLS: &[&str] = &["exec", "code_execution"];
         tools
             .iter()
-            .filter(|t| t.name() == hint.as_str())
+            .filter(|t| t.name() == hint.as_str() || UTILITY_TOOLS.contains(&t.name()))
             .map(|t| t.schema())
             .collect()
     } else {

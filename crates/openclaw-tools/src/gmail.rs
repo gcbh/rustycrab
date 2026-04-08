@@ -853,7 +853,7 @@ impl Tool for GmailTool {
                 "properties": {
                     "action": {
                         "type": "string",
-                        "enum": ["setup", "search", "read", "send", "labels", "move", "trash", "mark_read", "mark_unread", "download_attachment", "thread"],
+                        "enum": ["setup", "search", "read", "send", "labels", "move", "trash", "mark_read", "mark_unread", "download_attachment", "get_attachment", "thread"],
                         "description": "Action to perform"
                     },
                     "email": {
@@ -929,7 +929,7 @@ impl Tool for GmailTool {
             "trash" => self.action_trash(&args).await,
             "mark_read" => self.action_mark(&args, true).await,
             "mark_unread" => self.action_mark(&args, false).await,
-            "download_attachment" => self.action_download_attachment(&args).await,
+            "download_attachment" | "get_attachment" => self.action_download_attachment(&args).await,
             "thread" => self.action_thread(&args).await,
             other => Err(Error::ToolExecution(format!(
                 "unknown action '{other}', expected one of: setup, search, read, send, labels, move, trash, mark_read, mark_unread, download_attachment, thread"

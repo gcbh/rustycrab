@@ -143,15 +143,16 @@ async fn try_pymupdf(
 
     let script = format!(
         r#"
-import sys
+import sys, subprocess
 try:
     import pymupdf
 except ImportError:
     try:
         import fitz as pymupdf
     except ImportError:
-        print("pymupdf not installed", file=sys.stderr)
-        sys.exit(1)
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "pymupdf"],
+                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        import pymupdf
 
 try:
     doc = pymupdf.open("{escaped_path}")
@@ -283,9 +284,14 @@ async fn try_python_pdf(path: &str, pages: Option<&str>) -> std::result::Result<
 
     let script = format!(
         r#"
-import sys
+import sys, subprocess
 try:
     import PyPDF2
+except ImportError:
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "PyPDF2"],
+                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    import PyPDF2
+try:
     reader = PyPDF2.PdfReader("{escaped_path}")
     page_range = "{page_filter}"
     total = len(reader.pages)
