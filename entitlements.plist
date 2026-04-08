@@ -4,8 +4,8 @@
 <dict>
 	<key>keychain-access-groups</key>
 	<array>
-		<string>com.openclaw.master-key</string>
-		<string>com.openclaw.credentials</string>
+		<string>com.rustykrab.master-key</string>
+		<string>com.rustykrab.credentials</string>
 	</array>
 </dict>
 </plist>

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Ad-hoc codesign openclaw-cli with keychain entitlements.
+# Ad-hoc codesign rustykrab-cli with keychain entitlements.
 #
 # The Data Protection Keychain requires the keychain-access-groups
 # entitlement. This script signs the cargo-built binary so it can
@@ -24,9 +24,9 @@ fi
 
 # Determine which binary to sign.
 if [ $# -eq 0 ]; then
-    BINARY="$PROJECT_ROOT/target/debug/openclaw-cli"
+    BINARY="$PROJECT_ROOT/target/debug/rustykrab-cli"
 elif [ "$1" = "--release" ]; then
-    BINARY="$PROJECT_ROOT/target/release/openclaw-cli"
+    BINARY="$PROJECT_ROOT/target/release/rustykrab-cli"
 else
     BINARY="$1"
 fi
