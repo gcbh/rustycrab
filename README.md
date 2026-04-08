@@ -14,24 +14,15 @@ A security-first reimplementation of the RustyKrab AI agent gateway in Rust. Bui
 ```bash
 git clone https://github.com/gcbh/rustycrab.git
 cd rustycrab
-cargo build --release
+make              # release build (+ codesign on macOS)
+make debug        # debug build (+ codesign on macOS)
 ```
 
 The binary will be at `target/release/rustykrab-cli`.
 
-### macOS: Codesign for Keychain access
-
-On macOS, the Data Protection Keychain requires the `keychain-access-groups`
-entitlement. Cargo-built binaries aren't signed, so you need to ad-hoc codesign
-after building:
-
-```bash
-./scripts/codesign.sh --release    # sign release build
-./scripts/codesign.sh              # sign debug build
-```
-
-Without this step, keychain operations will fail with an entitlements error.
-You only need to re-run this after each `cargo build`.
+On macOS, `make` automatically ad-hoc codesigns the binary with the
+`keychain-access-groups` entitlement required by the Data Protection Keychain.
+You can also run `make codesign` or `make codesign-debug` separately.
 
 ## Quick Start
 
