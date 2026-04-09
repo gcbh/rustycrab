@@ -10,6 +10,7 @@ members = [
     "crates/rustykrab-channels",
     "crates/rustykrab-skills",
     "crates/rustykrab-cli",
+    "crates/rustykrab-memory",
 ]
 
 [workspace.package]
@@ -86,3 +87,4 @@ rustykrab-tools = { path = "crates/rustykrab-tools" }
 rustykrab-channels = { path = "crates/rustykrab-channels" }
 rustykrab-skills = { path = "crates/rustykrab-skills" }
 rustykrab-cli = { path = "crates/rustykrab-cli" }
+rustykrab-memory = { path = "crates/rustykrab-memory" }
