@@ -23,6 +23,8 @@ impl ConversationStore {
             updated_at: Utc::now(),
             summary: None,
             detected_profile: None,
+            channel_source: None,
+            channel_id: None,
         };
         self.save(&conv)?;
         Ok(conv)
@@ -61,6 +63,23 @@ impl ConversationStore {
             ids.push(id);
         }
         Ok(ids)
+    }
+
+    /// Find a conversation by channel source and channel ID.
+    ///
+    /// Used to persistently map e.g. a Telegram chat_id to a conversation
+    /// so the mapping survives server restarts.
+    pub fn find_by_channel(&self, source: &str, channel_id: &str) -> Result<Option<Conversation>, Error> {
+        for entry in self.tree.iter() {
+            let (_key, value) = entry.map_err(|e| Error::Storage(e.to_string()))?;
+            let conv: Conversation = serde_json::from_slice(&value)?;
+            if conv.channel_source.as_deref() == Some(source)
+                && conv.channel_id.as_deref() == Some(channel_id)
+            {
+                return Ok(Some(conv));
+            }
+        }
+        Ok(None)
     }
 
     /// Delete a conversation by ID.

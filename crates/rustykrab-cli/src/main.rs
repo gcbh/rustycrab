@@ -378,23 +378,48 @@ async fn telegram_agent_loop(
             }
 
             // Get or create conversation.
+            // First check in-memory cache, then persistent store, then create new.
             let conv_id = {
                 let mut states = chat_states.lock().await;
                 match states.get(&chat_id) {
                     Some(cs) => cs.conv_id,
-                    None => match state.store.conversations().create() {
-                        Ok(conv) => {
-                            let id = conv.id;
-                            states.insert(chat_id, ChatState { conv_id: id, busy: false });
-                            tracing::info!(chat_id, conv_id = %id, "created new conversation for Telegram chat");
-                            id
+                    None => {
+                        let chat_id_str = chat_id.to_string();
+                        // Check persistent store for an existing Telegram conversation.
+                        let existing = state
+                            .store
+                            .conversations()
+                            .find_by_channel("telegram", &chat_id_str)
+                            .ok()
+                            .flatten();
+
+                        match existing {
+                            Some(conv) => {
+                                let id = conv.id;
+                                states.insert(chat_id, ChatState { conv_id: id, busy: false });
+                                tracing::info!(chat_id, conv_id = %id, "resumed Telegram conversation from database");
+                                id
+                            }
+                            None => match state.store.conversations().create() {
+                                Ok(mut conv) => {
+                                    conv.channel_source = Some("telegram".to_string());
+                                    conv.channel_id = Some(chat_id_str);
+                                    if let Err(e) = state.store.conversations().save(&conv) {
+                                        tracing::error!(chat_id, "failed to save conversation metadata: {e}");
+                                    }
+                                    let id = conv.id;
+                                    states.insert(chat_id, ChatState { conv_id: id, busy: false });
+                                    tracing::info!(chat_id, conv_id = %id, "created new Telegram conversation");
+                                    id
+                                }
+                                Err(e) => {
+                                    tracing::error!(chat_id, "failed to create conversation: {e}");
+                                    let _ = tg.send_text(chat_id, "Internal error — please try again.").await;
+                                    return;
+                                }
+                            },
                         }
-                        Err(e) => {
-                            tracing::error!(chat_id, "failed to create conversation: {e}");
-                            let _ = tg.send_text(chat_id, "Internal error — please try again.").await;
-                            return;
-                        }
-                    },
+                    }
                 }
             };
 
