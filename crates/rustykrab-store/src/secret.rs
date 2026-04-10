@@ -3,6 +3,8 @@ use aes_gcm::{Aes256Gcm, KeyInit, Nonce};
 use argon2::Argon2;
 use rustykrab_core::Error;
 use rand::RngCore;
+use std::sync::Arc;
+use zeroize::Zeroizing;
 
 /// The salt length used for Argon2 key derivation.
 const SALT_LEN: usize = 16;
@@ -27,12 +29,12 @@ const NONCE_LEN: usize = 12;
 #[derive(Clone)]
 pub struct SecretStore {
     tree: sled::Tree,
-    master_key: Vec<u8>,
+    master_key: Arc<Zeroizing<Vec<u8>>>,
 }
 
 impl SecretStore {
-    pub(crate) fn new(tree: sled::Tree, master_key: Vec<u8>) -> Self {
-        Self { tree, master_key }
+    pub(crate) fn new(tree: sled::Tree, master_key: Zeroizing<Vec<u8>>) -> Self {
+        Self { tree, master_key: Arc::new(master_key) }
     }
 
     /// Store a secret value under the given name.

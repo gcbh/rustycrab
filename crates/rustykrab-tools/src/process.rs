@@ -1,7 +1,11 @@
+use std::collections::HashMap;
+use std::sync::Arc;
+
 use async_trait::async_trait;
 use rustykrab_core::types::ToolSchema;
 use rustykrab_core::{Result, Tool};
 use serde_json::{json, Value};
+use tokio::sync::Mutex;
 
 /// Commands allowed to be started as background processes.
 const ALLOWED_PROCESS_COMMANDS: &[&str] = &[
@@ -15,11 +19,18 @@ const ALLOWED_PROCESS_COMMANDS: &[&str] = &[
 ///
 /// Security: Only allowlisted commands can be started as background
 /// processes. Shell metacharacters and command substitution are rejected.
-pub struct ProcessTool;
+///
+/// Spawned child handles are retained so they can be awaited/killed later,
+/// preventing zombie process leaks.
+pub struct ProcessTool {
+    children: Arc<Mutex<HashMap<u32, tokio::process::Child>>>,
+}
 
 impl ProcessTool {
     pub fn new() -> Self {
-        Self
+        Self {
+            children: Arc::new(Mutex::new(HashMap::new())),
+        }
     }
 }
 
@@ -133,6 +144,9 @@ impl Tool for ProcessTool {
                     )
                 })?;
 
+                // Retain the child handle to prevent zombie process leaks.
+                self.children.lock().await.insert(pid, child);
+
                 Ok(json!({
                     "action": "start",
                     "pid": pid,
@@ -152,6 +166,19 @@ impl Tool for ProcessTool {
                     ));
                 }
 
+                // Try to kill via the stored child handle first (cleans up zombie).
+                let pid_u32 = pid as u32;
+                if let Some(mut child) = self.children.lock().await.remove(&pid_u32) {
+                    let _ = child.kill().await;
+                    let _ = child.wait().await;
+                    return Ok(json!({
+                        "action": "stop",
+                        "pid": pid,
+                        "status": "terminated",
+                    }));
+                }
+
+                // Fallback to kill(1) for processes not tracked by us.
                 let output = tokio::process::Command::new("kill")
                     .arg(pid.to_string())
                     .output()

@@ -14,3 +14,4 @@ serde_json.workspace = true
 tracing.workspace = true
 uuid.workspace = true
 chrono.workspace = true
+secrecy.workspace = true

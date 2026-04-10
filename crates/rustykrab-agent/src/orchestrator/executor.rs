@@ -312,7 +312,7 @@ async fn execute_tool_for_subtask(
 
     ToolResult {
         call_id: call.id.clone(),
-        output: serde_json::json!({ "error": last_err.unwrap().to_string() }),
+        output: serde_json::json!({ "error": last_err.unwrap_or_else(|| rustykrab_core::Error::ToolExecution("all retries exhausted".into())).to_string() }),
     }
 }
 

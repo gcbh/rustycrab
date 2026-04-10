@@ -70,7 +70,7 @@ impl Store {
 
     /// Return a handle for encrypted secret operations.
     pub fn secrets(&self) -> SecretStore {
-        SecretStore::new(self.secrets_tree.clone(), (*self.master_key).clone())
+        SecretStore::new(self.secrets_tree.clone(), self.master_key.clone())
     }
 
     /// Return a handle for conversation memory/RAG operations.

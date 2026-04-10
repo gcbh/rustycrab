@@ -8,6 +8,15 @@ fn tokens_to_chars(tokens: usize) -> usize {
     (tokens as f64 * 3.5) as usize
 }
 
+/// Snap a byte offset forward to the nearest UTF-8 character boundary.
+fn snap_to_char_boundary(s: &str, offset: usize) -> usize {
+    let mut pos = offset.min(s.len());
+    while pos < s.len() && !s.is_char_boundary(pos) {
+        pos += 1;
+    }
+    pos
+}
+
 /// Split text into overlapping chunks of approximately `max_tokens` tokens
 /// with `overlap_ratio` fraction of overlap between consecutive chunks.
 ///
@@ -30,7 +39,7 @@ pub fn chunk_text(content: &str, max_tokens: usize, overlap_ratio: f64) -> Vec<S
     let mut start = 0;
 
     while start < content.len() {
-        let end = (start + max_chars).min(content.len());
+        let end = snap_to_char_boundary(content, (start + max_chars).min(content.len()));
 
         // Try to find a natural break point near the end boundary.
         let chunk_end = if end < content.len() {
@@ -47,7 +56,7 @@ pub fn chunk_text(content: &str, max_tokens: usize, overlap_ratio: f64) -> Vec<S
 
         // Advance by (chunk_size - overlap), but at least 1 char to avoid infinite loop.
         let advance = (chunk_end - start).saturating_sub(overlap_chars).max(1);
-        start += advance;
+        start = snap_to_char_boundary(content, start + advance);
     }
 
     chunks
@@ -56,7 +65,11 @@ pub fn chunk_text(content: &str, max_tokens: usize, overlap_ratio: f64) -> Vec<S
 /// Find the best break point near `target_end` by looking for sentence
 /// boundaries, then newlines, then word boundaries.
 fn find_break_point(content: &str, start: usize, target_end: usize) -> usize {
-    let search_start = start + (target_end - start) * 3 / 4; // Look in the last 25%
+    let search_start = snap_to_char_boundary(content, start + (target_end - start) * 3 / 4);
+    let target_end = snap_to_char_boundary(content, target_end);
+    if search_start >= target_end {
+        return target_end;
+    }
     let region = &content[search_start..target_end];
 
     // Prefer sentence boundaries (. ! ? followed by whitespace).

@@ -51,20 +51,6 @@ impl GmailTool {
         Ok((email, password))
     }
 
-    /// Connect to Gmail IMAP with TLS.
-    fn connect_imap(&self) -> Result<imap::Session<native_tls::TlsStream<std::net::TcpStream>>> {
-        let (email, password) = self.get_credentials()?;
-        let tls = native_tls::TlsConnector::builder()
-            .build()
-            .map_err(|e| Error::ToolExecution(format!("TLS setup failed: {e}").into()))?;
-        let client = imap::connect((IMAP_HOST, IMAP_PORT), IMAP_HOST, &tls)
-            .map_err(|e| Error::ToolExecution(format!("IMAP connect failed: {e}").into()))?;
-        let session = client
-            .login(&email, &password)
-            .map_err(|e| Error::ToolExecution(format!("IMAP login failed: {}", e.0).into()))?;
-        Ok(session)
-    }
-
     // -----------------------------------------------------------------------
     // Action: setup
     // -----------------------------------------------------------------------
@@ -85,8 +71,17 @@ impl GmailTool {
             .map_err(|e| Error::ToolExecution(format!("failed to store app password: {e}").into()))?;
 
         // Verify credentials by connecting to IMAP.
-        let mut session = self.connect_imap()?;
-        let _ = session.logout();
+        // IMAP is blocking — run in spawn_blocking to avoid blocking the tokio worker.
+        let email_owned = email.to_string();
+        let password_owned = app_password.to_string();
+        tokio::task::spawn_blocking(move || {
+            let mut session = connect_imap_blocking(&email_owned, &password_owned)?;
+            let _ = session.logout();
+            Ok::<(), Error>(())
+        })
+        .await
+        .map_err(|e| Error::ToolExecution(format!("spawn_blocking failed: {e}").into()))?
+        .map_err(|e: Error| e)?;
 
         Ok(json!({
             "status": "authenticated",

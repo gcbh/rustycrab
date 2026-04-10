@@ -857,7 +857,7 @@ async fn execute_with_retries(
             }
         }
     }
-    Err(last_err.unwrap())
+    Err(last_err.unwrap_or_else(|| rustykrab_core::Error::ToolExecution("all retries exhausted".into())))
 }
 
 /// Wrap string values in a JSON `Value` with adversarial-content markers.

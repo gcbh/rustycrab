@@ -6,6 +6,7 @@ use rustykrab_core::types::{
     Message, MessageContent, Role, ToolCall, ToolSchema,
 };
 use rustykrab_core::Error;
+use secrecy::{ExposeSecret, SecretString};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -16,7 +17,7 @@ use uuid::Uuid;
 /// agentic workloads due to superior prompt injection resistance.
 pub struct AnthropicProvider {
     client: reqwest::Client,
-    api_key: String,
+    api_key: SecretString,
     model: String,
     max_tokens: u32,
 }
@@ -25,7 +26,7 @@ impl AnthropicProvider {
     pub fn new(api_key: String) -> Self {
         Self {
             client: reqwest::Client::new(),
-            api_key,
+            api_key: SecretString::from(api_key),
             model: "claude-sonnet-4-20250514".to_string(),
             max_tokens: 4096,
         }
@@ -229,7 +230,7 @@ impl ModelProvider for AnthropicProvider {
         let resp = self
             .client
             .post("https://api.anthropic.com/v1/messages")
-            .header("x-api-key", &self.api_key)
+            .header("x-api-key", self.api_key.expose_secret())
             .header("anthropic-version", "2023-06-01")
             .header("content-type", "application/json")
             .json(&body)
