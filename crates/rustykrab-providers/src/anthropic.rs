@@ -2,9 +2,7 @@ use async_trait::async_trait;
 use chrono::Utc;
 use rustykrab_core::error::Result;
 use rustykrab_core::model::{ModelProvider, ModelResponse, StopReason, Usage};
-use rustykrab_core::types::{
-    Message, MessageContent, Role, ToolCall, ToolSchema,
-};
+use rustykrab_core::types::{Message, MessageContent, Role, ToolCall, ToolSchema};
 use rustykrab_core::Error;
 use secrecy::{ExposeSecret, SecretString};
 use serde::{Deserialize, Serialize};
@@ -112,8 +110,7 @@ impl AnthropicProvider {
                             role: "user".to_string(),
                             content: ApiContent::Blocks(vec![ContentBlock::ToolResult {
                                 tool_use_id: result.call_id.clone(),
-                                content: serde_json::to_string(&result.output)
-                                    .unwrap_or_default(),
+                                content: serde_json::to_string(&result.output).unwrap_or_default(),
                             }]),
                         });
                     }
@@ -214,11 +211,7 @@ impl ModelProvider for AnthropicProvider {
         "anthropic"
     }
 
-    async fn chat(
-        &self,
-        messages: &[Message],
-        tools: &[ToolSchema],
-    ) -> Result<ModelResponse> {
+    async fn chat(&self, messages: &[Message], tools: &[ToolSchema]) -> Result<ModelResponse> {
         let (system, api_messages) = Self::build_messages(messages);
         let api_tools = Self::build_tools(tools);
 
@@ -232,8 +225,7 @@ impl ModelProvider for AnthropicProvider {
             body["system"] = serde_json::json!(sys);
         }
         if !api_tools.is_empty() {
-            body["tools"] = serde_json::to_value(&api_tools)
-                .map_err(|e| Error::Serialization(e))?;
+            body["tools"] = serde_json::to_value(&api_tools).map_err(Error::Serialization)?;
         }
 
         tracing::debug!(model = %self.model, "calling Anthropic Messages API");

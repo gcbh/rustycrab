@@ -2,9 +2,7 @@ use async_trait::async_trait;
 use chrono::Utc;
 use rustykrab_core::error::Result;
 use rustykrab_core::model::{ModelProvider, ModelResponse, StopReason, Usage};
-use rustykrab_core::types::{
-    Message, MessageContent, Role, ToolCall, ToolSchema,
-};
+use rustykrab_core::types::{Message, MessageContent, Role, ToolCall, ToolSchema};
 use rustykrab_core::Error;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
@@ -112,7 +110,7 @@ impl OllamaProvider {
     fn build_messages(messages: &[Message]) -> Vec<OllamaMessage> {
         messages
             .iter()
-            .filter_map(|msg| {
+            .map(|msg| {
                 let role = match msg.role {
                     Role::System => "system",
                     Role::User => "user",
@@ -121,12 +119,12 @@ impl OllamaProvider {
                 };
 
                 match &msg.content {
-                    MessageContent::Text(text) => Some(OllamaMessage {
+                    MessageContent::Text(text) => OllamaMessage {
                         role: role.to_string(),
                         content: Some(text.clone()),
                         tool_calls: None,
-                    }),
-                    MessageContent::ToolCall(call) => Some(OllamaMessage {
+                    },
+                    MessageContent::ToolCall(call) => OllamaMessage {
                         role: role.to_string(),
                         content: None,
                         tool_calls: Some(vec![OllamaToolCall {
@@ -135,8 +133,8 @@ impl OllamaProvider {
                                 arguments: call.arguments.clone(),
                             },
                         }]),
-                    }),
-                    MessageContent::MultiToolCall(calls) => Some(OllamaMessage {
+                    },
+                    MessageContent::MultiToolCall(calls) => OllamaMessage {
                         role: role.to_string(),
                         content: None,
                         tool_calls: Some(
@@ -150,14 +148,12 @@ impl OllamaProvider {
                                 })
                                 .collect(),
                         ),
-                    }),
-                    MessageContent::ToolResult(result) => Some(OllamaMessage {
+                    },
+                    MessageContent::ToolResult(result) => OllamaMessage {
                         role: role.to_string(),
-                        content: Some(
-                            serde_json::to_string(&result.output).unwrap_or_default(),
-                        ),
+                        content: Some(serde_json::to_string(&result.output).unwrap_or_default()),
                         tool_calls: None,
-                    }),
+                    },
                 }
             })
             .collect()
@@ -250,11 +246,7 @@ impl ModelProvider for OllamaProvider {
         "ollama"
     }
 
-    async fn chat(
-        &self,
-        messages: &[Message],
-        tools: &[ToolSchema],
-    ) -> Result<ModelResponse> {
+    async fn chat(&self, messages: &[Message], tools: &[ToolSchema]) -> Result<ModelResponse> {
         let ollama_messages = Self::build_messages(messages);
         let ollama_tools = Self::build_tools(tools);
 
@@ -271,8 +263,7 @@ impl ModelProvider for OllamaProvider {
         });
 
         if !ollama_tools.is_empty() {
-            body["tools"] = serde_json::to_value(&ollama_tools)
-                .map_err(|e| Error::Serialization(e))?;
+            body["tools"] = serde_json::to_value(&ollama_tools).map_err(Error::Serialization)?;
         }
 
         tracing::debug!(model = %self.model, base_url = %self.base_url, "calling Ollama chat API");
@@ -287,13 +278,7 @@ impl ModelProvider for OllamaProvider {
                 tokio::time::sleep(delay).await;
             }
 
-            let resp = match self
-                .client
-                .post(&url)
-                .json(&body)
-                .send()
-                .await
-            {
+            let resp = match self.client.post(&url).json(&body).send().await {
                 Ok(r) => r,
                 Err(e) => {
                     last_err = Some(Error::ModelProvider(format!(
@@ -306,10 +291,9 @@ impl ModelProvider for OllamaProvider {
 
             let status = resp.status();
             if status.is_success() {
-                let ollama_resp: OllamaResponse = resp
-                    .json()
-                    .await
-                    .map_err(|e| Error::ModelProvider(format!("failed to parse Ollama response: {e}")))?;
+                let ollama_resp: OllamaResponse = resp.json().await.map_err(|e| {
+                    Error::ModelProvider(format!("failed to parse Ollama response: {e}"))
+                })?;
                 return Self::parse_response(ollama_resp);
             }
 

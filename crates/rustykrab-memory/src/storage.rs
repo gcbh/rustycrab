@@ -7,9 +7,7 @@ use rusqlite::params;
 use rustykrab_core::Result;
 use uuid::Uuid;
 
-use crate::types::{
-    ExtractedFact, LifecycleStage, LinkType, Memory, MemoryChunk, MemoryLink,
-};
+use crate::types::{ExtractedFact, LifecycleStage, LinkType, Memory, MemoryChunk, MemoryLink};
 
 /// Abstract storage backend for the memory system.
 ///
@@ -36,11 +34,7 @@ pub trait MemoryStorage: Send + Sync {
     ) -> Result<Option<Memory>>;
 
     /// List all valid memories for an agent in a given lifecycle stage.
-    async fn list_by_stage(
-        &self,
-        agent_id: Uuid,
-        stage: LifecycleStage,
-    ) -> Result<Vec<Memory>>;
+    async fn list_by_stage(&self, agent_id: Uuid, stage: LifecycleStage) -> Result<Vec<Memory>>;
 
     /// List all valid, retrievable memories for an agent.
     async fn list_retrievable(&self, agent_id: Uuid) -> Result<Vec<Memory>>;
@@ -72,10 +66,7 @@ pub trait MemoryStorage: Send + Sync {
     async fn get_chunks_for_memory(&self, memory_id: Uuid) -> Result<Vec<MemoryChunk>>;
 
     /// Retrieve all chunks with embeddings for an agent (for vector search).
-    async fn get_all_chunk_embeddings(
-        &self,
-        agent_id: Uuid,
-    ) -> Result<Vec<(Uuid, Vec<f32>)>>;
+    async fn get_all_chunk_embeddings(&self, agent_id: Uuid) -> Result<Vec<(Uuid, Vec<f32>)>>;
 
     // ── Extracted facts ─────────────────────────────────────────
 
@@ -99,10 +90,7 @@ pub trait MemoryStorage: Send + Sync {
     // ── Bulk operations ─────────────────────────────────────────
 
     /// Batch update lifecycle stages (used by sweep).
-    async fn batch_update_stages(
-        &self,
-        updates: &[(Uuid, LifecycleStage)],
-    ) -> Result<u32>;
+    async fn batch_update_stages(&self, updates: &[(Uuid, LifecycleStage)]) -> Result<u32>;
 }
 
 // ── SQLite helpers ──────────────────────────────────────────────
@@ -384,8 +372,7 @@ fn row_to_memory(row: &rusqlite::Row) -> rusqlite::Result<Memory> {
             .and_then(|s| DateTime::parse_from_rfc3339(&s).ok())
             .map(|dt| dt.with_timezone(&Utc)),
         is_valid: row.get::<_, i32>("is_valid")? != 0,
-        invalidated_by: invalidated_by_str
-            .and_then(|s| Uuid::parse_str(&s).ok()),
+        invalidated_by: invalidated_by_str.and_then(|s| Uuid::parse_str(&s).ok()),
         invalidated_at: invalidated_at_str
             .and_then(|s| DateTime::parse_from_rfc3339(&s).ok())
             .map(|dt| dt.with_timezone(&Utc)),
@@ -541,11 +528,7 @@ impl MemoryStorage for SqliteMemoryStorage {
         .await
     }
 
-    async fn list_by_stage(
-        &self,
-        agent_id: Uuid,
-        stage: LifecycleStage,
-    ) -> Result<Vec<Memory>> {
+    async fn list_by_stage(&self, agent_id: Uuid, stage: LifecycleStage) -> Result<Vec<Memory>> {
         let agent_str = agent_id.to_string();
         let stage_str = lifecycle_to_str(stage).to_string();
         self.with_conn(move |conn| {
@@ -753,10 +736,7 @@ impl MemoryStorage for SqliteMemoryStorage {
         .await
     }
 
-    async fn get_all_chunk_embeddings(
-        &self,
-        agent_id: Uuid,
-    ) -> Result<Vec<(Uuid, Vec<f32>)>> {
+    async fn get_all_chunk_embeddings(&self, agent_id: Uuid) -> Result<Vec<(Uuid, Vec<f32>)>> {
         let agent_str = agent_id.to_string();
         self.with_conn(move |conn| {
             let mut stmt = conn
@@ -968,10 +948,7 @@ impl MemoryStorage for SqliteMemoryStorage {
 
     // ── Bulk operations ─────────────────────────────────────────
 
-    async fn batch_update_stages(
-        &self,
-        updates: &[(Uuid, LifecycleStage)],
-    ) -> Result<u32> {
+    async fn batch_update_stages(&self, updates: &[(Uuid, LifecycleStage)]) -> Result<u32> {
         let updates: Vec<(String, String)> = updates
             .iter()
             .map(|(id, stage)| (id.to_string(), lifecycle_to_str(*stage).to_string()))

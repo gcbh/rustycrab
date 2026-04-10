@@ -7,9 +7,7 @@
 //! Nodes: entities (people, projects, events, preferences)
 //! Edges: relationships (works-with, depends-on, prefers, scheduled-for)
 
-use rustykrab_core::orchestration::{
-    EntityType, KnowledgeEntity, KnowledgeRelation, RelationType,
-};
+use rustykrab_core::orchestration::{EntityType, KnowledgeEntity, KnowledgeRelation, RelationType};
 use rustykrab_core::Error;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -80,8 +78,7 @@ impl KnowledgeGraph {
             .map_err(|e| Error::Storage(e.to_string()))?
         {
             Some(id_bytes) => {
-                let id = Uuid::from_slice(&id_bytes)
-                    .map_err(|e| Error::Storage(e.to_string()))?;
+                let id = Uuid::from_slice(&id_bytes).map_err(|e| Error::Storage(e.to_string()))?;
                 self.get_entity(id)
             }
             None => Ok(None),
@@ -111,7 +108,11 @@ impl KnowledgeGraph {
             let entity: KnowledgeEntity = serde_json::from_slice(&value)?;
 
             let name_match = entity.name.to_lowercase().contains(&query_lower);
-            let attr_match = entity.attributes.to_string().to_lowercase().contains(&query_lower);
+            let attr_match = entity
+                .attributes
+                .to_string()
+                .to_lowercase()
+                .contains(&query_lower);
 
             if name_match || attr_match {
                 results.push(entity);
@@ -219,11 +220,7 @@ impl KnowledgeGraph {
     ///
     /// Performs a breadth-first traversal up to `max_hops` away from
     /// the seed entities, collecting all entities and relations found.
-    pub fn retrieve_subgraph(
-        &self,
-        seed_ids: &[Uuid],
-        max_hops: usize,
-    ) -> Result<SubGraph, Error> {
+    pub fn retrieve_subgraph(&self, seed_ids: &[Uuid], max_hops: usize) -> Result<SubGraph, Error> {
         use std::collections::{HashSet, VecDeque};
 
         let mut visited: HashSet<Uuid> = HashSet::new();

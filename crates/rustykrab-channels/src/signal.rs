@@ -42,11 +42,7 @@ impl SignalChannel {
     /// - `base_url`: URL of signal-cli-rest-api (e.g. `http://localhost:8080`)
     /// - `account_number`: your registered Signal number in E.164 format
     /// - `allowed_numbers`: set of phone numbers allowed to message the bot
-    pub fn new(
-        base_url: String,
-        account_number: String,
-        allowed_numbers: HashSet<String>,
-    ) -> Self {
+    pub fn new(base_url: String, account_number: String, allowed_numbers: HashSet<String>) -> Self {
         let (tx, rx) = mpsc::channel(256);
         Self {
             client: reqwest::Client::new(),
@@ -264,17 +260,12 @@ impl SignalChannel {
     /// Check that signal-cli-rest-api is reachable and the account is registered.
     pub async fn health_check(&self) -> Result<()> {
         let url = format!("{}/v1/about", self.base_url);
-        let resp = self
-            .client
-            .get(&url)
-            .send()
-            .await
-            .map_err(|e| {
-                Error::Channel(format!(
-                    "cannot reach signal-cli-rest-api at {}: {e}",
-                    self.base_url
-                ))
-            })?;
+        let resp = self.client.get(&url).send().await.map_err(|e| {
+            Error::Channel(format!(
+                "cannot reach signal-cli-rest-api at {}: {e}",
+                self.base_url
+            ))
+        })?;
 
         if !resp.status().is_success() {
             return Err(Error::Channel(

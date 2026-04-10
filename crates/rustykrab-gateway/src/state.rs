@@ -1,4 +1,6 @@
-use rustykrab_agent::{HarnessProfile, HarnessRouter, OrchestrationPipeline, ProcessSandbox, Sandbox};
+use rustykrab_agent::{
+    HarnessProfile, HarnessRouter, OrchestrationPipeline, ProcessSandbox, Sandbox,
+};
 use rustykrab_channels::{SignalChannel, TelegramChannel};
 use rustykrab_core::model::ModelProvider;
 use rustykrab_core::orchestration::OrchestrationConfig;

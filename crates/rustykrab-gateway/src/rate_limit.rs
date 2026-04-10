@@ -93,7 +93,11 @@ impl RateLimiter {
                 .iter()
                 .filter(|(_, rec)| {
                     let locked_expired = rec.locked_until.map(|l| l <= now).unwrap_or(true);
-                    let no_recent = rec.attempts.last().map(|&t| t <= stale_cutoff).unwrap_or(true);
+                    let no_recent = rec
+                        .attempts
+                        .last()
+                        .map(|&t| t <= stale_cutoff)
+                        .unwrap_or(true);
                     locked_expired && no_recent
                 })
                 .map(|(ip, _)| *ip)

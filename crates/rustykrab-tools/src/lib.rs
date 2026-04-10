@@ -19,8 +19,8 @@ mod web_search;
 mod x_search;
 
 // Session tools
-pub mod session_manager;
 mod agents_list;
+pub mod session_manager;
 mod session_status;
 mod sessions_history;
 mod sessions_list;
@@ -37,14 +37,14 @@ mod memory_save;
 mod memory_search;
 
 // Messaging tools
-pub mod message_backend;
 mod message;
+pub mod message_backend;
 
 // Automation tools
-pub mod cron_backend;
 mod cron;
-pub mod gateway_backend;
+pub mod cron_backend;
 mod gateway;
+pub mod gateway_backend;
 
 // Media tools
 mod image;

@@ -84,11 +84,7 @@ impl OrchestrationPipeline {
     }
 
     /// Direct response — no pipeline, single model call.
-    async fn run_direct(
-        &self,
-        request: &str,
-        context: Option<&str>,
-    ) -> Result<PipelineResult> {
+    async fn run_direct(&self, request: &str, context: Option<&str>) -> Result<PipelineResult> {
         use chrono::Utc;
         use rustykrab_core::types::{Message, MessageContent, Role};
         use uuid::Uuid;
@@ -111,12 +107,7 @@ impl OrchestrationPipeline {
 
         let schemas: Vec<_> = self.tools.iter().map(|t| t.schema()).collect();
         let response = self.provider.chat(&messages, &schemas).await?;
-        let text = response
-            .message
-            .content
-            .as_text()
-            .unwrap_or("")
-            .to_string();
+        let text = response.message.content.as_text().unwrap_or("").to_string();
 
         Ok(PipelineResult {
             response: text,
@@ -130,11 +121,7 @@ impl OrchestrationPipeline {
     /// Moderate pipeline: decompose + parallel execute + synthesize,
     /// with a continuation loop that re-decomposes remaining work
     /// until the task is complete or max_recursion_depth is reached.
-    async fn run_moderate(
-        &self,
-        request: &str,
-        context: Option<&str>,
-    ) -> Result<PipelineResult> {
+    async fn run_moderate(&self, request: &str, context: Option<&str>) -> Result<PipelineResult> {
         let decomposer = Decomposer::new(self.provider.clone(), self.config.clone());
         let executor = ParallelExecutor::new(
             self.provider.clone(),
@@ -272,11 +259,7 @@ impl OrchestrationPipeline {
     }
 
     /// Complex pipeline: decompose + execute + synthesize + refine.
-    async fn run_complex(
-        &self,
-        request: &str,
-        context: Option<&str>,
-    ) -> Result<PipelineResult> {
+    async fn run_complex(&self, request: &str, context: Option<&str>) -> Result<PipelineResult> {
         // Run moderate pipeline first.
         let mut result = self.run_moderate(request, context).await?;
 
@@ -292,11 +275,7 @@ impl OrchestrationPipeline {
     }
 
     /// Critical pipeline: decompose + execute + synthesize + vote + refine.
-    async fn run_critical(
-        &self,
-        request: &str,
-        context: Option<&str>,
-    ) -> Result<PipelineResult> {
+    async fn run_critical(&self, request: &str, context: Option<&str>) -> Result<PipelineResult> {
         // Self-consistency voting first.
         let voter = ConsistencyVoter::new(
             self.provider.clone(),
@@ -312,10 +291,7 @@ impl OrchestrationPipeline {
 
             return Ok(PipelineResult {
                 response: refined,
-                stages_executed: vec![
-                    PipelineStage::Verify,
-                    PipelineStage::Refine,
-                ],
+                stages_executed: vec![PipelineStage::Verify, PipelineStage::Refine],
                 sub_task_count: 0,
                 vote: Some(vote),
                 refinement_iterations: iterations,

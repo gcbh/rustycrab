@@ -46,11 +46,7 @@ pub trait ModelProvider: Send + Sync {
     fn name(&self) -> &str;
 
     /// Send a conversation to the model and get back the next message.
-    async fn chat(
-        &self,
-        messages: &[Message],
-        tools: &[ToolSchema],
-    ) -> Result<ModelResponse>;
+    async fn chat(&self, messages: &[Message], tools: &[ToolSchema]) -> Result<ModelResponse>;
 
     /// Stream a response, sending chunks through the callback.
     ///

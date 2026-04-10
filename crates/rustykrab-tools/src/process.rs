@@ -9,10 +9,23 @@ use tokio::sync::Mutex;
 
 /// Commands allowed to be started as background processes.
 const ALLOWED_PROCESS_COMMANDS: &[&str] = &[
-    "python3", "python", "node", "npm", "npx", "cargo", "make",
-    "docker", "docker-compose", "kubectl",
-    "git", "ssh", "java", "go", "ruby",
-    "tail", "watch",
+    "python3",
+    "python",
+    "node",
+    "npm",
+    "npx",
+    "cargo",
+    "make",
+    "docker",
+    "docker-compose",
+    "kubectl",
+    "git",
+    "ssh",
+    "java",
+    "go",
+    "ruby",
+    "tail",
+    "watch",
 ];
 
 /// A built-in tool that manages background processes: start, stop, or list.
@@ -43,16 +56,23 @@ impl Default for ProcessTool {
 /// Validate that a command is safe to spawn as a background process.
 fn validate_process_command(command: &str) -> std::result::Result<(), String> {
     // Reject shell metacharacters that enable injection
-    if command.contains("$(") || command.contains('`')
-        || command.contains("<(") || command.contains(">(")
+    if command.contains("$(")
+        || command.contains('`')
+        || command.contains("<(")
+        || command.contains(">(")
         || command.contains("${")
-        || command.contains(';') || command.contains("&&")
-        || command.contains("||") || command.contains('|')
+        || command.contains(';')
+        || command.contains("&&")
+        || command.contains("||")
+        || command.contains('|')
     {
-        return Err("shell operators, pipes, and command substitution are not allowed in process commands".into());
+        return Err(
+            "shell operators, pipes, and command substitution are not allowed in process commands"
+                .into(),
+        );
     }
 
-    let base_cmd = command.trim().split_whitespace().next().unwrap_or("");
+    let base_cmd = command.split_whitespace().next().unwrap_or("");
     let cmd_name = base_cmd.rsplit('/').next().unwrap_or(base_cmd);
 
     if !ALLOWED_PROCESS_COMMANDS.contains(&cmd_name) {
@@ -121,10 +141,10 @@ impl Tool for ProcessTool {
                 })?;
 
                 // Parse the command into parts and execute directly (no shell)
-                let parts: Vec<&str> = command.trim().split_whitespace().collect();
-                let (program, cmd_args) = parts.split_first().ok_or_else(|| {
-                    rustykrab_core::Error::ToolExecution("empty command".into())
-                })?;
+                let parts: Vec<&str> = command.split_whitespace().collect();
+                let (program, cmd_args) = parts
+                    .split_first()
+                    .ok_or_else(|| rustykrab_core::Error::ToolExecution("empty command".into()))?;
 
                 let child = tokio::process::Command::new(program)
                     .args(cmd_args)
@@ -193,9 +213,9 @@ impl Tool for ProcessTool {
                     }))
                 } else {
                     let stderr = String::from_utf8_lossy(&output.stderr);
-                    Err(rustykrab_core::Error::ToolExecution(format!(
-                        "failed to stop process {pid}: {stderr}"
-                    ).into()))
+                    Err(rustykrab_core::Error::ToolExecution(
+                        format!("failed to stop process {pid}: {stderr}").into(),
+                    ))
                 }
             }
             "list" => {
@@ -230,9 +250,9 @@ impl Tool for ProcessTool {
                     "processes": processes,
                 }))
             }
-            other => Err(rustykrab_core::Error::ToolExecution(format!(
-                "unknown action: {other}"
-            ).into())),
+            other => Err(rustykrab_core::Error::ToolExecution(
+                format!("unknown action: {other}").into(),
+            )),
         }
     }
 }

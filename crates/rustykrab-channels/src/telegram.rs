@@ -120,15 +120,17 @@ impl TelegramChannel {
             .try_send(chat_id, text, Some("Markdown"), SEND_MAX_RETRIES)
             .await
         {
-            Ok(()) => return Ok(()),
+            Ok(()) => Ok(()),
             Err(e) => {
                 // If Markdown parsing failed (400 Bad Request), retry as plain text.
                 let err_str = format!("{e}");
-                if err_str.contains("400") || err_str.contains("parse") || err_str.contains("can't") {
+                if err_str.contains("400") || err_str.contains("parse") || err_str.contains("can't")
+                {
                     tracing::debug!("Markdown rejected by Telegram, retrying as plain text");
-                    return self.try_send(chat_id, text, None, SEND_MAX_RETRIES).await;
+                    self.try_send(chat_id, text, None, SEND_MAX_RETRIES).await
+                } else {
+                    Err(e)
                 }
-                return Err(e);
             }
         }
     }
@@ -350,7 +352,10 @@ impl TelegramChannel {
         if !self.allowed_chats.is_empty() && !self.allowed_chats.contains(&chat_id) {
             tracing::warn!(
                 chat_id,
-                username = msg.from.as_ref().map(|u| u.username.as_deref().unwrap_or("unknown")),
+                username = msg
+                    .from
+                    .as_ref()
+                    .map(|u| u.username.as_deref().unwrap_or("unknown")),
                 "message from disallowed chat, ignoring"
             );
             return Ok(());
@@ -427,13 +432,12 @@ impl TelegramChannel {
     /// This provides an additional layer of verification beyond the
     /// secret_token header that Telegram sends.
     pub fn verify_hmac(&self, payload: &[u8], signature_hex: &str) -> Result<()> {
-        let secret = self
-            .webhook_secret
-            .as_ref()
-            .ok_or_else(|| Error::Config("no webhook secret configured for HMAC verification".into()))?;
+        let secret = self.webhook_secret.as_ref().ok_or_else(|| {
+            Error::Config("no webhook secret configured for HMAC verification".into())
+        })?;
 
-        let mut mac = HmacSha256::new_from_slice(secret.as_bytes())
-            .expect("HMAC accepts any key size");
+        let mut mac =
+            HmacSha256::new_from_slice(secret.as_bytes()).expect("HMAC accepts any key size");
         mac.update(payload);
 
         let expected = hex::decode(signature_hex)

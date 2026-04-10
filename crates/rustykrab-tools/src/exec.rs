@@ -10,18 +10,92 @@ const MAX_OUTPUT_BYTES: usize = 100 * 1024; // 100KB
 /// Commands that are explicitly allowed for execution.
 /// All other commands are rejected to prevent arbitrary command injection.
 const ALLOWED_COMMANDS: &[&str] = &[
-    "ls", "cat", "head", "tail", "wc", "grep", "find", "sort", "uniq", "diff",
-    "echo", "pwd", "whoami", "date", "env", "which", "file", "stat", "du", "df",
-    "git", "cargo", "rustc", "python3", "python", "node", "npm", "npx",
-    "make", "cmake", "gcc", "g++", "clang", "go", "java", "javac",
-    "curl", "wget", "ssh", "scp", "rsync", "tar", "zip", "unzip", "gzip",
-    "sed", "awk", "cut", "tr", "tee", "xargs", "mkdir", "rmdir", "cp", "mv",
-    "touch", "chmod", "chown", "ln", "readlink", "basename", "dirname",
-    "ps", "top", "htop", "kill", "pgrep", "lsof", "netstat", "ss",
-    "docker", "docker-compose", "kubectl",
-    "pip", "pip3", "poetry", "pipenv", "uv",
-    "ruby", "gem", "bundle", "rake",
-    "test", "true", "false", "sleep",
+    "ls",
+    "cat",
+    "head",
+    "tail",
+    "wc",
+    "grep",
+    "find",
+    "sort",
+    "uniq",
+    "diff",
+    "echo",
+    "pwd",
+    "whoami",
+    "date",
+    "env",
+    "which",
+    "file",
+    "stat",
+    "du",
+    "df",
+    "git",
+    "cargo",
+    "rustc",
+    "python3",
+    "python",
+    "node",
+    "npm",
+    "npx",
+    "make",
+    "cmake",
+    "gcc",
+    "g++",
+    "clang",
+    "go",
+    "java",
+    "javac",
+    "curl",
+    "wget",
+    "ssh",
+    "scp",
+    "rsync",
+    "tar",
+    "zip",
+    "unzip",
+    "gzip",
+    "sed",
+    "awk",
+    "cut",
+    "tr",
+    "tee",
+    "xargs",
+    "mkdir",
+    "rmdir",
+    "cp",
+    "mv",
+    "touch",
+    "chmod",
+    "chown",
+    "ln",
+    "readlink",
+    "basename",
+    "dirname",
+    "ps",
+    "top",
+    "htop",
+    "kill",
+    "pgrep",
+    "lsof",
+    "netstat",
+    "ss",
+    "docker",
+    "docker-compose",
+    "kubectl",
+    "pip",
+    "pip3",
+    "poetry",
+    "pipenv",
+    "uv",
+    "ruby",
+    "gem",
+    "bundle",
+    "rake",
+    "test",
+    "true",
+    "false",
+    "sleep",
 ];
 
 /// A built-in tool that executes shell commands and returns their output.
@@ -70,7 +144,9 @@ fn validate_command(command: &str) -> std::result::Result<(), String> {
     // and `${var}` can execute arbitrary commands even if the outer command
     // is in the allowlist (e.g. `echo $(rm -rf /)`).
     if command.contains("$(") || command.contains('`') {
-        return Err("command contains shell substitution ($() or backticks) which is not allowed".into());
+        return Err(
+            "command contains shell substitution ($() or backticks) which is not allowed".into(),
+        );
     }
 
     // Split by pipes, semicolons, &&, || and validate each command segment.
@@ -165,9 +241,8 @@ impl Tool for ExecTool {
 
         // Inherit the user's PATH so tools installed via homebrew, cargo,
         // pip, nvm, etc. are available. Fall back to a sensible default.
-        let path = std::env::var("PATH").unwrap_or_else(|_| {
-            "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin".to_string()
-        });
+        let path = std::env::var("PATH")
+            .unwrap_or_else(|_| "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin".to_string());
 
         let future = tokio::process::Command::new("sh")
             .arg("-c")
@@ -181,9 +256,9 @@ impl Tool for ExecTool {
         let output = timeout(Duration::from_secs(timeout_secs), future)
             .await
             .map_err(|_| {
-                rustykrab_core::Error::ToolExecution(format!(
-                    "command timed out after {timeout_secs}s"
-                ).into())
+                rustykrab_core::Error::ToolExecution(
+                    format!("command timed out after {timeout_secs}s").into(),
+                )
             })?
             .map_err(|e| rustykrab_core::Error::ToolExecution(e.to_string().into()))?;
 

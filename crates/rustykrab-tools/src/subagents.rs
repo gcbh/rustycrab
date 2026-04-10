@@ -71,9 +71,9 @@ impl Tool for SubagentsTool {
         // H7: Server-side depth tracking — ignore client-provided _depth.
         let current_depth = self.depth.load(Ordering::Acquire);
         if current_depth >= MAX_RECURSION_DEPTH {
-            return Err(rustykrab_core::Error::ToolExecution(format!(
-                "maximum agent recursion depth ({MAX_RECURSION_DEPTH}) exceeded"
-            ).into()));
+            return Err(rustykrab_core::Error::ToolExecution(
+                format!("maximum agent recursion depth ({MAX_RECURSION_DEPTH}) exceeded").into(),
+            ));
         }
 
         self.depth.fetch_add(1, Ordering::AcqRel);

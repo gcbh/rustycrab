@@ -92,10 +92,21 @@ impl RefinementLoop {
     }
 
     /// Run the critique pass.
-    async fn critique(&self, request: &str, response: &str, context: Option<&str>) -> Result<String> {
+    async fn critique(
+        &self,
+        request: &str,
+        response: &str,
+        context: Option<&str>,
+    ) -> Result<String> {
         let prompt = CRITIQUE_PROMPT
-            .replace("{request}", &format!("<user_input>\n{request}\n</user_input>"))
-            .replace("{response}", &format!("<agent_response>\n{response}\n</agent_response>"));
+            .replace(
+                "{request}",
+                &format!("<user_input>\n{request}\n</user_input>"),
+            )
+            .replace(
+                "{response}",
+                &format!("<agent_response>\n{response}\n</agent_response>"),
+            );
 
         let mut messages = Vec::new();
         if let Some(ctx) = context {
@@ -131,9 +142,18 @@ impl RefinementLoop {
         context: Option<&str>,
     ) -> Result<String> {
         let prompt = REFINE_PROMPT
-            .replace("{request}", &format!("<user_input>\n{request}\n</user_input>"))
-            .replace("{response}", &format!("<agent_response>\n{response}\n</agent_response>"))
-            .replace("{critique}", &format!("<agent_response>\n{critique}\n</agent_response>"));
+            .replace(
+                "{request}",
+                &format!("<user_input>\n{request}\n</user_input>"),
+            )
+            .replace(
+                "{response}",
+                &format!("<agent_response>\n{response}\n</agent_response>"),
+            )
+            .replace(
+                "{critique}",
+                &format!("<agent_response>\n{critique}\n</agent_response>"),
+            );
 
         let mut messages = Vec::new();
         if let Some(ctx) = context {

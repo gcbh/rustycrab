@@ -10,9 +10,7 @@ use std::sync::Arc;
 use chrono::Utc;
 use rustykrab_core::model::ModelProvider;
 use rustykrab_core::orchestration::{OrchestrationConfig, SubTask, SubTaskResult};
-use rustykrab_core::types::{
-    Message, MessageContent, Role, ToolCall, ToolResult, ToolSchema,
-};
+use rustykrab_core::types::{Message, MessageContent, Role, ToolCall, ToolResult, ToolSchema};
 use rustykrab_core::{Result, Tool};
 use tokio::sync::Semaphore;
 use uuid::Uuid;
@@ -51,7 +49,11 @@ impl ParallelExecutor {
     /// The optional `system_context` carries the agent's identity, tool
     /// permissions, and security policies so that sub-task model calls
     /// understand they are operating within an authorized agent.
-    pub async fn execute(&self, tasks: &[SubTask], system_context: Option<&str>) -> Vec<SubTaskResult> {
+    pub async fn execute(
+        &self,
+        tasks: &[SubTask],
+        system_context: Option<&str>,
+    ) -> Vec<SubTaskResult> {
         let mut results: HashMap<Uuid, SubTaskResult> = HashMap::new();
         let mut completed: HashSet<Uuid> = HashSet::new();
         let all_ids: HashSet<Uuid> = tasks.iter().map(|t| t.id).collect();
@@ -99,8 +101,16 @@ impl ParallelExecutor {
 
                 handles.push(tokio::spawn(async move {
                     let _permit = sem.acquire().await.expect("semaphore closed");
-                    execute_sub_task(&task, &dep_context, sys_ctx.as_deref(), &provider, &tools, &sandbox, &config)
-                        .await
+                    execute_sub_task(
+                        &task,
+                        &dep_context,
+                        sys_ctx.as_deref(),
+                        &provider,
+                        &tools,
+                        &sandbox,
+                        &config,
+                    )
+                    .await
                 }));
             }
 
@@ -118,10 +128,7 @@ impl ParallelExecutor {
         }
 
         // Return results in original task order.
-        tasks
-            .iter()
-            .filter_map(|t| results.remove(&t.id))
-            .collect()
+        tasks.iter().filter_map(|t| results.remove(&t.id)).collect()
     }
 }
 
@@ -222,12 +229,7 @@ async fn execute_sub_task(
         }
 
         // Text response — sub-task complete.
-        let output = response
-            .message
-            .content
-            .as_text()
-            .unwrap_or("")
-            .to_string();
+        let output = response.message.content.as_text().unwrap_or("").to_string();
 
         // Summarize if output is too long.
         let output = if config.summarize_sub_results && output.len() > 2000 {
@@ -283,7 +285,10 @@ async fn execute_tool_for_subtask(
     };
 
     // Enforce sandbox check — fail the tool call if denied.
-    if let Err(e) = sandbox.execute(&call.name, call.arguments.clone(), &policy).await {
+    if let Err(e) = sandbox
+        .execute(&call.name, call.arguments.clone(), &policy)
+        .await
+    {
         return ToolResult {
             call_id: call.id.clone(),
             output: serde_json::json!({ "error": format!("sandbox denied tool '{}': {e}", call.name) }),
@@ -323,10 +328,7 @@ async fn execute_tool_for_subtask(
 }
 
 /// Summarize a long output to stay within context budgets.
-async fn summarize_output(
-    provider: &Arc<dyn ModelProvider>,
-    output: &str,
-) -> Result<String> {
+async fn summarize_output(provider: &Arc<dyn ModelProvider>, output: &str) -> Result<String> {
     let messages = vec![Message {
         id: Uuid::new_v4(),
         role: Role::User,

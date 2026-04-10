@@ -9,10 +9,7 @@ use tokio::time::timeout;
 /// so that pyenv/Homebrew/conda installs are found even after env_clear().
 fn which_python() -> Option<std::path::PathBuf> {
     // Check the current PATH first (before we clear it)
-    if let Ok(output) = std::process::Command::new("which")
-        .arg("python3")
-        .output()
-    {
+    if let Ok(output) = std::process::Command::new("which").arg("python3").output() {
         if output.status.success() {
             let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
             if !path.is_empty() {
@@ -139,9 +136,9 @@ impl Tool for CodeExecutionTool {
 
         let output = result
             .map_err(|_| {
-                rustykrab_core::Error::ToolExecution(format!(
-                    "code execution timed out after {timeout_secs}s"
-                ).into())
+                rustykrab_core::Error::ToolExecution(
+                    format!("code execution timed out after {timeout_secs}s").into(),
+                )
             })?
             .map_err(|e| rustykrab_core::Error::ToolExecution(e.to_string().into()))?;
 

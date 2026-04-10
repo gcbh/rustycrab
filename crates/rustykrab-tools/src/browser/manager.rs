@@ -51,7 +51,10 @@ impl BrowserManager {
     }
 
     /// Get or create a browser instance for the given profile.
-    pub async fn get_browser(&self, profile_name: &str) -> Result<Arc<Mutex<HashMap<String, ProfileInstance>>>> {
+    pub async fn get_browser(
+        &self,
+        profile_name: &str,
+    ) -> Result<Arc<Mutex<HashMap<String, ProfileInstance>>>> {
         let mut instances = self.instances.lock().await;
 
         if !instances.contains_key(profile_name) {
@@ -155,14 +158,18 @@ impl BrowserManager {
         let instances = self.instances.lock().await;
         let inst = instances.get(profile_name).ok_or_else(|| {
             Error::ToolExecution(
-                format!("browser not running for profile '{profile_name}'. Use action 'start' first.")
-                    .into(),
+                format!(
+                    "browser not running for profile '{profile_name}'. Use action 'start' first."
+                )
+                .into(),
             )
         })?;
 
-        let pages = inst.browser.pages().await.map_err(|e| {
-            Error::ToolExecution(format!("failed to list tabs: {e}").into())
-        })?;
+        let pages = inst
+            .browser
+            .pages()
+            .await
+            .map_err(|e| Error::ToolExecution(format!("failed to list tabs: {e}").into()))?;
 
         let mut tabs = Vec::new();
         for (i, page) in pages.iter().enumerate() {
@@ -186,21 +193,17 @@ impl BrowserManager {
     }
 
     /// Open a new tab with the given URL.
-    pub async fn open_tab(
-        &self,
-        profile_name: &str,
-        url: &str,
-    ) -> Result<serde_json::Value> {
+    pub async fn open_tab(&self, profile_name: &str, url: &str) -> Result<serde_json::Value> {
         let instances = self.instances.lock().await;
         let inst = instances.get(profile_name).ok_or_else(|| {
-            Error::ToolExecution(
-                format!("browser not running for profile '{profile_name}'").into(),
-            )
+            Error::ToolExecution(format!("browser not running for profile '{profile_name}'").into())
         })?;
 
-        let page = inst.browser.new_page(url).await.map_err(|e| {
-            Error::ToolExecution(format!("failed to open tab: {e}").into())
-        })?;
+        let page = inst
+            .browser
+            .new_page(url)
+            .await
+            .map_err(|e| Error::ToolExecution(format!("failed to open tab: {e}").into()))?;
 
         let _ = page.wait_for_navigation().await;
         let actual_url = page.url().await.ok().flatten().unwrap_or_default();
@@ -224,23 +227,19 @@ impl BrowserManager {
     ) -> Result<serde_json::Value> {
         let instances = self.instances.lock().await;
         let inst = instances.get(profile_name).ok_or_else(|| {
-            Error::ToolExecution(
-                format!("browser not running for profile '{profile_name}'").into(),
-            )
+            Error::ToolExecution(format!("browser not running for profile '{profile_name}'").into())
         })?;
 
         let idx = parse_tab_index(target_id)?;
-        let pages = inst.browser.pages().await.map_err(|e| {
-            Error::ToolExecution(format!("failed to list tabs: {e}").into())
-        })?;
+        let pages = inst
+            .browser
+            .pages()
+            .await
+            .map_err(|e| Error::ToolExecution(format!("failed to list tabs: {e}").into()))?;
 
         if idx >= pages.len() {
             return Err(Error::ToolExecution(
-                format!(
-                    "tab index {idx} out of range (have {} tabs)",
-                    pages.len()
-                )
-                .into(),
+                format!("tab index {idx} out of range (have {} tabs)", pages.len()).into(),
             ));
         }
 
@@ -266,30 +265,26 @@ impl BrowserManager {
     ) -> Result<serde_json::Value> {
         let instances = self.instances.lock().await;
         let inst = instances.get(profile_name).ok_or_else(|| {
-            Error::ToolExecution(
-                format!("browser not running for profile '{profile_name}'").into(),
-            )
+            Error::ToolExecution(format!("browser not running for profile '{profile_name}'").into())
         })?;
 
         let idx = parse_tab_index(target_id)?;
-        let pages = inst.browser.pages().await.map_err(|e| {
-            Error::ToolExecution(format!("failed to list tabs: {e}").into())
-        })?;
+        let pages = inst
+            .browser
+            .pages()
+            .await
+            .map_err(|e| Error::ToolExecution(format!("failed to list tabs: {e}").into()))?;
 
         if idx >= pages.len() {
             return Err(Error::ToolExecution(
-                format!(
-                    "tab index {idx} out of range (have {} tabs)",
-                    pages.len()
-                )
-                .into(),
+                format!("tab index {idx} out of range (have {} tabs)", pages.len()).into(),
             ));
         }
 
         let page = &pages[idx];
-        page.bring_to_front().await.map_err(|e| {
-            Error::ToolExecution(format!("failed to focus tab: {e}").into())
-        })?;
+        page.bring_to_front()
+            .await
+            .map_err(|e| Error::ToolExecution(format!("failed to focus tab: {e}").into()))?;
 
         let url = page.url().await.ok().flatten().unwrap_or_default();
         let title = page.get_title().await.ok().flatten().unwrap_or_default();
@@ -312,14 +307,18 @@ impl BrowserManager {
         let instances = self.instances.lock().await;
         let inst = instances.get(profile_name).ok_or_else(|| {
             Error::ToolExecution(
-                format!("browser not running for profile '{profile_name}'. Use action 'start' first.")
-                    .into(),
+                format!(
+                    "browser not running for profile '{profile_name}'. Use action 'start' first."
+                )
+                .into(),
             )
         })?;
 
-        let pages = inst.browser.pages().await.map_err(|e| {
-            Error::ToolExecution(format!("failed to list pages: {e}").into())
-        })?;
+        let pages = inst
+            .browser
+            .pages()
+            .await
+            .map_err(|e| Error::ToolExecution(format!("failed to list pages: {e}").into()))?;
 
         if let Some(tid) = target_id {
             let idx = parse_tab_index(tid)?;
@@ -350,9 +349,8 @@ impl BrowserManager {
         match Browser::connect(&cdp_url).await {
             Ok((browser, handler)) => {
                 let mut handler = handler;
-                let handler_task = tokio::spawn(async move {
-                    while let Some(_event) = handler.next().await {}
-                });
+                let handler_task =
+                    tokio::spawn(async move { while let Some(_event) = handler.next().await {} });
                 return Ok(ProfileInstance {
                     browser,
                     _handler_task: handler_task,
@@ -364,10 +362,8 @@ impl BrowserManager {
             Err(e) => {
                 if attach_only {
                     return Err(Error::ToolExecution(
-                        format!(
-                            "cannot connect to browser at {cdp_url} (attach-only mode): {e}"
-                        )
-                        .into(),
+                        format!("cannot connect to browser at {cdp_url} (attach-only mode): {e}")
+                            .into(),
                     ));
                 }
                 tracing::info!(
@@ -384,8 +380,7 @@ impl BrowserManager {
         let profile = profile_name.to_string();
         tokio::task::spawn_blocking(move || launch_browser_blocking(&config, &profile))
             .await
-            .map_err(|e| Error::ToolExecution(format!("launch task failed: {e}").into()))?
-            ?;
+            .map_err(|e| Error::ToolExecution(format!("launch task failed: {e}").into()))??;
 
         // Wait for it to start
         tokio::time::sleep(std::time::Duration::from_secs(2)).await;
@@ -402,9 +397,8 @@ impl BrowserManager {
         })?;
 
         let mut handler = handler;
-        let handler_task = tokio::spawn(async move {
-            while let Some(_event) = handler.next().await {}
-        });
+        let handler_task =
+            tokio::spawn(async move { while let Some(_event) = handler.next().await {} });
 
         Ok(ProfileInstance {
             browser,
@@ -414,7 +408,6 @@ impl BrowserManager {
             launched_by_us: true,
         })
     }
-
 }
 
 /// Launch a Chrome/Chromium instance for the given profile.
@@ -430,9 +423,8 @@ fn launch_browser_blocking(config: &BrowserConfig, profile_name: &str) -> Result
         .unwrap_or(18800);
 
     let user_data_dir = config.resolve_user_data_dir(profile_name);
-    std::fs::create_dir_all(&user_data_dir).map_err(|e| {
-        Error::ToolExecution(format!("failed to create user-data dir: {e}").into())
-    })?;
+    std::fs::create_dir_all(&user_data_dir)
+        .map_err(|e| Error::ToolExecution(format!("failed to create user-data dir: {e}").into()))?;
 
     // Set up profile symlink for cookie persistence (managed profiles only)
     let profile = config.profiles.get(profile_name);
@@ -499,10 +491,7 @@ fn chrome_data_dir() -> Option<std::path::PathBuf> {
     let home = std::env::var("HOME").ok()?;
     #[cfg(target_os = "macos")]
     {
-        Some(
-            std::path::PathBuf::from(home)
-                .join("Library/Application Support/Google/Chrome"),
-        )
+        Some(std::path::PathBuf::from(home).join("Library/Application Support/Google/Chrome"))
     }
     #[cfg(target_os = "linux")]
     {
@@ -626,10 +615,8 @@ fn parse_tab_index(target_id: &str) -> Result<usize> {
     let idx_str = target_id.strip_prefix("tab_").unwrap_or(target_id);
     idx_str.parse::<usize>().map_err(|_| {
         Error::ToolExecution(
-            format!(
-                "invalid targetId '{target_id}'. Expected format: 'tab_N' (e.g., 'tab_0')"
-            )
-            .into(),
+            format!("invalid targetId '{target_id}'. Expected format: 'tab_N' (e.g., 'tab_0')")
+                .into(),
         )
     })
 }

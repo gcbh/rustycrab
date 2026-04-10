@@ -59,12 +59,7 @@ pub trait Sandbox: Send + Sync {
     ///
     /// The sandbox receives the tool name, arguments, and a policy
     /// controlling what the sandboxed code can do.
-    async fn execute(
-        &self,
-        tool_name: &str,
-        args: Value,
-        policy: &SandboxPolicy,
-    ) -> Result<Value>;
+    async fn execute(&self, tool_name: &str, args: Value, policy: &SandboxPolicy) -> Result<Value>;
 }
 
 /// Process-based sandbox using fork + resource limits.
@@ -87,12 +82,7 @@ impl Default for ProcessSandbox {
 
 #[async_trait]
 impl Sandbox for ProcessSandbox {
-    async fn execute(
-        &self,
-        tool_name: &str,
-        args: Value,
-        policy: &SandboxPolicy,
-    ) -> Result<Value> {
+    async fn execute(&self, tool_name: &str, args: Value, policy: &SandboxPolicy) -> Result<Value> {
         use tokio::time::{timeout, Duration};
 
         let timeout_duration = Duration::from_secs(policy.timeout_secs);
@@ -117,10 +107,13 @@ impl Sandbox for ProcessSandbox {
 
         match result {
             Ok(inner) => inner,
-            Err(_) => Err(Error::ToolExecution(format!(
-                "tool '{tool_name}' exceeded sandbox timeout of {}s",
-                policy.timeout_secs
-            ).into())),
+            Err(_) => Err(Error::ToolExecution(
+                format!(
+                    "tool '{tool_name}' exceeded sandbox timeout of {}s",
+                    policy.timeout_secs
+                )
+                .into(),
+            )),
         }
     }
 }

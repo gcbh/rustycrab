@@ -104,10 +104,11 @@ pub struct BrowserProfile {
 }
 
 /// How a browser instance is driven.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub enum DriverType {
     /// Managed: RustyKrab launches and owns the browser process.
+    #[default]
     Rustykrab,
     /// Existing session: attach to user's running Chrome via CDP.
     ExistingSession,
@@ -115,14 +116,8 @@ pub enum DriverType {
     Remote,
 }
 
-impl Default for DriverType {
-    fn default() -> Self {
-        Self::Rustykrab
-    }
-}
-
 /// SSRF policy for browser navigation.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SsrfPolicy {
     /// Allow navigation to private network addresses.
@@ -132,15 +127,6 @@ pub struct SsrfPolicy {
     /// Hostnames explicitly allowed regardless of SSRF rules.
     #[serde(default)]
     pub hostname_allowlist: Vec<String>,
-}
-
-impl Default for SsrfPolicy {
-    fn default() -> Self {
-        Self {
-            allow_private_network: false,
-            hostname_allowlist: Vec::new(),
-        }
-    }
 }
 
 impl Default for BrowserConfig {

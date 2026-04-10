@@ -9,9 +9,9 @@ use crate::bm25::Bm25Index;
 use crate::config::MemoryConfig;
 use crate::embedding::{self, Embedder};
 use crate::scoring::rrf_fuse_with_sources;
-use crate::types::RetrievalSource;
 use crate::storage::MemoryStorage;
 use crate::types::RetrievalResult;
+use crate::types::RetrievalSource;
 
 /// Four-way parallel retrieval pipeline with RRF fusion.
 ///
@@ -90,10 +90,22 @@ impl MemoryRetriever {
 
         // ── Stage 3: RRF fusion with sources ────────────────────
         let ranked_lists = vec![
-            (semantic, self.config.rrf_weight_semantic, RetrievalSource::Semantic),
-            (keyword, self.config.rrf_weight_keyword, RetrievalSource::Keyword),
+            (
+                semantic,
+                self.config.rrf_weight_semantic,
+                RetrievalSource::Semantic,
+            ),
+            (
+                keyword,
+                self.config.rrf_weight_keyword,
+                RetrievalSource::Keyword,
+            ),
             (graph, self.config.rrf_weight_graph, RetrievalSource::Graph),
-            (temporal, self.config.rrf_weight_temporal, RetrievalSource::Temporal),
+            (
+                temporal,
+                self.config.rrf_weight_temporal,
+                RetrievalSource::Temporal,
+            ),
         ];
 
         let fused = rrf_fuse_with_sources(&ranked_lists, self.config.rrf_k);

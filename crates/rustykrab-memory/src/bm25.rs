@@ -3,21 +3,18 @@ use uuid::Uuid;
 
 /// Stopwords list for tokenization (shared with keyword extraction).
 const STOPWORDS: &[&str] = &[
-    "the", "a", "an", "is", "are", "was", "were", "be", "been", "being", "have",
-    "has", "had", "do", "does", "did", "will", "would", "could", "should", "may",
-    "might", "shall", "can", "need", "dare", "ought", "used", "to", "of", "in",
-    "for", "on", "with", "at", "by", "from", "as", "into", "through", "during",
-    "before", "after", "above", "below", "between", "out", "off", "over", "under",
-    "again", "further", "then", "once", "here", "there", "when", "where", "why",
-    "how", "all", "both", "each", "few", "more", "most", "other", "some", "such",
-    "no", "nor", "not", "only", "own", "same", "so", "than", "too", "very", "just",
-    "don", "now", "and", "but", "or", "because", "if", "while", "that", "this",
-    "these", "those", "what", "which", "who", "whom", "its", "it", "he", "she",
-    "they", "them", "his", "her", "their", "our", "your", "my", "me", "we", "you",
-    "about", "also", "get", "got", "like", "make", "made", "want", "let", "know",
-    "think", "see", "come", "look", "use", "find", "give", "tell", "say", "said",
-    "try", "ask", "work", "seem", "feel", "leave", "call", "keep", "put", "show",
-    "take",
+    "the", "a", "an", "is", "are", "was", "were", "be", "been", "being", "have", "has", "had",
+    "do", "does", "did", "will", "would", "could", "should", "may", "might", "shall", "can",
+    "need", "dare", "ought", "used", "to", "of", "in", "for", "on", "with", "at", "by", "from",
+    "as", "into", "through", "during", "before", "after", "above", "below", "between", "out",
+    "off", "over", "under", "again", "further", "then", "once", "here", "there", "when", "where",
+    "why", "how", "all", "both", "each", "few", "more", "most", "other", "some", "such", "no",
+    "nor", "not", "only", "own", "same", "so", "than", "too", "very", "just", "don", "now", "and",
+    "but", "or", "because", "if", "while", "that", "this", "these", "those", "what", "which",
+    "who", "whom", "its", "it", "he", "she", "they", "them", "his", "her", "their", "our", "your",
+    "my", "me", "we", "you", "about", "also", "get", "got", "like", "make", "made", "want", "let",
+    "know", "think", "see", "come", "look", "use", "find", "give", "tell", "say", "said", "try",
+    "ask", "work", "seem", "feel", "leave", "call", "keep", "put", "show", "take",
 ];
 
 /// Tokenize text into lowercase terms, removing stopwords and short tokens.
@@ -81,10 +78,7 @@ impl Bm25Index {
 
         // Insert into inverted index.
         for (term, freq) in tf {
-            self.inverted
-                .entry(term)
-                .or_default()
-                .push((doc_id, freq));
+            self.inverted.entry(term).or_default().push((doc_id, freq));
         }
 
         self.doc_lengths.insert(doc_id, doc_len);
@@ -138,8 +132,7 @@ impl Bm25Index {
 
                     // BM25: IDF * (tf * (k1 + 1)) / (tf + k1 * (1 - b + b * dl/avgdl))
                     let numerator = tf_f * (self.k1 + 1.0);
-                    let denominator =
-                        tf_f + self.k1 * (1.0 - self.b + self.b * dl / avgdl);
+                    let denominator = tf_f + self.k1 * (1.0 - self.b + self.b * dl / avgdl);
                     let bm25 = idf * numerator / denominator;
 
                     *scores.entry(doc_id).or_default() += bm25;

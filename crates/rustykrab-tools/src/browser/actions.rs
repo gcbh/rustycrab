@@ -79,25 +79,27 @@ pub async fn execute_act(
 
 /// Click an element by CSS selector.
 async fn act_click(page: &Page, selector: &str) -> Result<Value> {
-    let elem = page.find_element(selector).await.map_err(|e| {
-        Error::ToolExecution(format!("element not found '{selector}': {e}").into())
-    })?;
-    elem.click().await.map_err(|e| {
-        Error::ToolExecution(format!("click failed on '{selector}': {e}").into())
-    })?;
+    let elem = page
+        .find_element(selector)
+        .await
+        .map_err(|e| Error::ToolExecution(format!("element not found '{selector}': {e}").into()))?;
+    elem.click()
+        .await
+        .map_err(|e| Error::ToolExecution(format!("click failed on '{selector}': {e}").into()))?;
     Ok(json!({ "status": "clicked", "selector": selector }))
 }
 
 /// Type text into an element, optionally clearing first.
 async fn act_type(page: &Page, selector: &str, text: &str, clear: bool) -> Result<Value> {
-    let elem = page.find_element(selector).await.map_err(|e| {
-        Error::ToolExecution(format!("element not found '{selector}': {e}").into())
-    })?;
+    let elem = page
+        .find_element(selector)
+        .await
+        .map_err(|e| Error::ToolExecution(format!("element not found '{selector}': {e}").into()))?;
 
     // Focus the element
-    elem.click().await.map_err(|e| {
-        Error::ToolExecution(format!("failed to focus '{selector}': {e}").into())
-    })?;
+    elem.click()
+        .await
+        .map_err(|e| Error::ToolExecution(format!("failed to focus '{selector}': {e}").into()))?;
 
     if clear {
         // Clear existing value via JS
@@ -108,9 +110,9 @@ async fn act_type(page: &Page, selector: &str, text: &str, clear: bool) -> Resul
         let _ = page.evaluate(clear_js).await;
     }
 
-    elem.type_str(text).await.map_err(|e| {
-        Error::ToolExecution(format!("typing failed on '{selector}': {e}").into())
-    })?;
+    elem.type_str(text)
+        .await
+        .map_err(|e| Error::ToolExecution(format!("typing failed on '{selector}': {e}").into()))?;
 
     Ok(json!({
         "status": "typed",
@@ -144,12 +146,16 @@ async fn act_press(page: &Page, selector: &str, key: &str) -> Result<Value> {
             return 'pressed';
         }})()"#,
         selector.replace('\'', "\\'").replace('"', "\\\""),
-        key, key, key, key,
+        key,
+        key,
+        key,
+        key,
     );
 
-    let result = page.evaluate(js).await.map_err(|e| {
-        Error::ToolExecution(format!("press failed: {e}").into())
-    })?;
+    let result = page
+        .evaluate(js)
+        .await
+        .map_err(|e| Error::ToolExecution(format!("press failed: {e}").into()))?;
 
     let status: String = result.into_value().unwrap_or_else(|_| "unknown".into());
     if status == "element_not_found" {
@@ -185,9 +191,10 @@ async fn act_hover(page: &Page, selector: &str) -> Result<Value> {
         selector.replace('\'', "\\'").replace('"', "\\\""),
     );
 
-    let result = page.evaluate(js).await.map_err(|e| {
-        Error::ToolExecution(format!("hover failed: {e}").into())
-    })?;
+    let result = page
+        .evaluate(js)
+        .await
+        .map_err(|e| Error::ToolExecution(format!("hover failed: {e}").into()))?;
 
     let status: String = result.into_value().unwrap_or_else(|_| "unknown".into());
     if status == "element_not_found" {
@@ -214,9 +221,10 @@ async fn act_select(page: &Page, selector: &str, value: &str) -> Result<Value> {
         value.replace('\'', "\\'").replace('"', "\\\""),
     );
 
-    let result = page.evaluate(js).await.map_err(|e| {
-        Error::ToolExecution(format!("select failed: {e}").into())
-    })?;
+    let result = page
+        .evaluate(js)
+        .await
+        .map_err(|e| Error::ToolExecution(format!("select failed: {e}").into()))?;
 
     let status: String = result.into_value().unwrap_or_else(|_| "unknown".into());
     if status == "element_not_found" {
@@ -258,9 +266,10 @@ async fn act_drag(page: &Page, source_selector: &str, target_selector: &str) -> 
         target_selector.replace('\'', "\\'").replace('"', "\\\""),
     );
 
-    let result = page.evaluate(js).await.map_err(|e| {
-        Error::ToolExecution(format!("drag failed: {e}").into())
-    })?;
+    let result = page
+        .evaluate(js)
+        .await
+        .map_err(|e| Error::ToolExecution(format!("drag failed: {e}").into()))?;
 
     let status: String = result.into_value().unwrap_or_else(|_| "unknown".into());
     match status.as_str() {

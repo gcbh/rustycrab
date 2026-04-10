@@ -12,9 +12,7 @@ use crate::embedding::Embedder;
 use crate::extraction::RegexExtractor;
 use crate::scoring::compute_importance;
 use crate::storage::MemoryStorage;
-use crate::types::{
-    ConversationTurn, ImportanceSource, LifecycleStage, Memory, MemoryChunk,
-};
+use crate::types::{ConversationTurn, ImportanceSource, LifecycleStage, Memory, MemoryChunk};
 
 /// Dual-track memory writer.
 ///
@@ -199,10 +197,7 @@ impl MemoryWriter {
 
     /// Rebuild the BM25 index from all retrievable memories in storage.
     /// Call this on startup to hydrate the in-memory index.
-    pub async fn rebuild_bm25_index(
-        &self,
-        agent_id: Uuid,
-    ) -> rustykrab_core::Result<usize> {
+    pub async fn rebuild_bm25_index(&self, agent_id: Uuid) -> rustykrab_core::Result<usize> {
         let memories = self.storage.list_retrievable(agent_id).await?;
         let mut index = self.bm25_index.lock().await;
         // Clear existing entries before rebuilding to prevent double-indexing (#128).

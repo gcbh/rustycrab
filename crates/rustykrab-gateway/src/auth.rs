@@ -23,8 +23,7 @@ pub async fn require_auth(
     }
 
     // Static assets are public (the WebChat UI).
-    if !request.uri().path().starts_with("/api/")
-        && !request.uri().path().starts_with("/webhook/")
+    if !request.uri().path().starts_with("/api/") && !request.uri().path().starts_with("/webhook/")
     {
         return Ok(next.run(request).await);
     }
@@ -46,7 +45,7 @@ pub async fn require_auth(
     // (next.run) to avoid holding the lock across an async boundary.
     let is_valid = {
         let token_guard = state.auth_token.read().unwrap_or_else(|e| e.into_inner());
-        token.map_or(false, |t| constant_time_eq(t, &token_guard))
+        token.is_some_and(|t| constant_time_eq(t, &token_guard))
     };
 
     if is_valid {

@@ -68,7 +68,9 @@ impl GmailTool {
             .map_err(|e| Error::ToolExecution(format!("failed to store email: {e}").into()))?;
         self.secrets
             .set(KEY_APP_PASSWORD, app_password)
-            .map_err(|e| Error::ToolExecution(format!("failed to store app password: {e}").into()))?;
+            .map_err(|e| {
+                Error::ToolExecution(format!("failed to store app password: {e}").into())
+            })?;
 
         // Verify credentials by connecting to IMAP.
         // IMAP is blocking — run in spawn_blocking to avoid blocking the tokio worker.
@@ -111,9 +113,9 @@ impl GmailTool {
             let (email, password) = get_creds(&secrets)?;
             let mut session = connect_imap_blocking(&email, &password)?;
 
-            session
-                .select(&mailbox)
-                .map_err(|e| Error::ToolExecution(format!("select {mailbox} failed: {e}").into()))?;
+            session.select(&mailbox).map_err(|e| {
+                Error::ToolExecution(format!("select {mailbox} failed: {e}").into())
+            })?;
 
             // Use Gmail's X-GM-RAW extension for full search syntax,
             // falling back to standard IMAP SEARCH.
@@ -121,7 +123,7 @@ impl GmailTool {
             // (e.g. query `from:"foo@bar.com"` becomes `X-GM-RAW "from:\"foo@bar.com\""`).
             let escaped_query = query.replace('\\', "\\\\").replace('"', "\\\"");
             let uids = session
-                .uid_search(&format!("X-GM-RAW \"{escaped_query}\""))
+                .uid_search(format!("X-GM-RAW \"{escaped_query}\""))
                 .or_else(|_| session.uid_search(&query))
                 .map_err(|e| Error::ToolExecution(format!("search failed: {e}").into()))?;
 
@@ -169,11 +171,7 @@ impl GmailTool {
                     .map(|d| decode_imap_string(d))
                     .unwrap_or_default();
 
-                let flags: Vec<String> = fetch
-                    .flags()
-                    .iter()
-                    .map(|f| format!("{f:?}"))
-                    .collect();
+                let flags: Vec<String> = fetch.flags().iter().map(|f| format!("{f:?}")).collect();
 
                 messages.push(json!({
                     "uid": fetch.uid.unwrap_or(0),
@@ -213,18 +211,17 @@ impl GmailTool {
             let (email, password) = get_creds(&secrets)?;
             let mut session = connect_imap_blocking(&email, &password)?;
 
-            session
-                .select(&mailbox)
-                .map_err(|e| Error::ToolExecution(format!("select {mailbox} failed: {e}").into()))?;
+            session.select(&mailbox).map_err(|e| {
+                Error::ToolExecution(format!("select {mailbox} failed: {e}").into())
+            })?;
 
             let fetches = session
                 .uid_fetch(uid.to_string(), "(UID RFC822 FLAGS ENVELOPE)")
                 .map_err(|e| Error::ToolExecution(format!("fetch uid {uid} failed: {e}").into()))?;
 
-            let fetch = fetches
-                .iter()
-                .next()
-                .ok_or_else(|| Error::ToolExecution(format!("message uid {uid} not found").into()))?;
+            let fetch = fetches.iter().next().ok_or_else(|| {
+                Error::ToolExecution(format!("message uid {uid} not found").into())
+            })?;
 
             let raw_body = fetch.body().unwrap_or_default();
             let parsed = mail_parser::MessageParser::default()
@@ -243,19 +240,29 @@ impl GmailTool {
                 .unwrap_or_default();
             let to: Vec<String> = parsed
                 .to()
-                .map(|addrs| addrs.iter().map(|a| {
-                    a.name()
-                        .map(|n| format!("{n} <{}>", a.address().unwrap_or("")))
-                        .unwrap_or_else(|| a.address().unwrap_or("").to_string())
-                }).collect())
+                .map(|addrs| {
+                    addrs
+                        .iter()
+                        .map(|a| {
+                            a.name()
+                                .map(|n| format!("{n} <{}>", a.address().unwrap_or("")))
+                                .unwrap_or_else(|| a.address().unwrap_or("").to_string())
+                        })
+                        .collect()
+                })
                 .unwrap_or_default();
             let cc: Vec<String> = parsed
                 .cc()
-                .map(|addrs| addrs.iter().map(|a| {
-                    a.name()
-                        .map(|n| format!("{n} <{}>", a.address().unwrap_or("")))
-                        .unwrap_or_else(|| a.address().unwrap_or("").to_string())
-                }).collect())
+                .map(|addrs| {
+                    addrs
+                        .iter()
+                        .map(|a| {
+                            a.name()
+                                .map(|n| format!("{n} <{}>", a.address().unwrap_or("")))
+                                .unwrap_or_else(|| a.address().unwrap_or("").to_string())
+                        })
+                        .collect()
+                })
                 .unwrap_or_default();
             let date = parsed.date().map(|d| d.to_string()).unwrap_or_default();
             let message_id = parsed.message_id().unwrap_or("").to_string();
@@ -277,7 +284,11 @@ impl GmailTool {
 
             // Truncate very long bodies to avoid blowing up context.
             let body_text = if body_text.len() > 8000 {
-                format!("{}…\n[truncated, {} chars total]", &body_text[..body_text.floor_char_boundary(8000)], body_text.len())
+                format!(
+                    "{}…\n[truncated, {} chars total]",
+                    &body_text[..body_text.floor_char_boundary(8000)],
+                    body_text.len()
+                )
             } else {
                 body_text
             };
@@ -358,15 +369,20 @@ impl GmailTool {
 
         let (email, password) = self.get_credentials()?;
 
-        let mut message_builder = lettre::message::Message::builder()
-            .from(email.parse().map_err(|e| Error::ToolExecution(format!("invalid from address: {e}").into()))?)
-            .to(to.parse().map_err(|e| Error::ToolExecution(format!("invalid to address: {e}").into()))?)
-            .subject(subject);
+        let mut message_builder =
+            lettre::message::Message::builder()
+                .from(email.parse().map_err(|e| {
+                    Error::ToolExecution(format!("invalid from address: {e}").into())
+                })?)
+                .to(to
+                    .parse()
+                    .map_err(|e| Error::ToolExecution(format!("invalid to address: {e}").into()))?)
+                .subject(subject);
 
         if let Some(cc_addr) = cc {
-            message_builder = message_builder.cc(
-                cc_addr.parse().map_err(|e| Error::ToolExecution(format!("invalid cc address: {e}").into()))?
-            );
+            message_builder = message_builder.cc(cc_addr
+                .parse()
+                .map_err(|e| Error::ToolExecution(format!("invalid cc address: {e}").into()))?);
         }
         if let Some(reply_id) = in_reply_to {
             message_builder = message_builder.in_reply_to(reply_id.to_string());
@@ -376,10 +392,8 @@ impl GmailTool {
             .body(body.to_string())
             .map_err(|e| Error::ToolExecution(format!("failed to build email: {e}").into()))?;
 
-        let creds = lettre::transport::smtp::authentication::Credentials::new(
-            email.clone(),
-            password,
-        );
+        let creds =
+            lettre::transport::smtp::authentication::Credentials::new(email.clone(), password);
 
         // SMTP is blocking in lettre's sync transport; use async transport.
         use lettre::{AsyncSmtpTransport, AsyncTransport, Tokio1Executor};
@@ -456,9 +470,9 @@ impl GmailTool {
             let (email, password) = get_creds(&secrets)?;
             let mut session = connect_imap_blocking(&email, &password)?;
 
-            session
-                .select(&from_mailbox)
-                .map_err(|e| Error::ToolExecution(format!("select {from_mailbox} failed: {e}").into()))?;
+            session.select(&from_mailbox).map_err(|e| {
+                Error::ToolExecution(format!("select {from_mailbox} failed: {e}").into())
+            })?;
 
             session
                 .uid_mv(uid.to_string(), &to_mailbox)
@@ -495,9 +509,9 @@ impl GmailTool {
             let (email, password) = get_creds(&secrets)?;
             let mut session = connect_imap_blocking(&email, &password)?;
 
-            session
-                .select(&mailbox)
-                .map_err(|e| Error::ToolExecution(format!("select {mailbox} failed: {e}").into()))?;
+            session.select(&mailbox).map_err(|e| {
+                Error::ToolExecution(format!("select {mailbox} failed: {e}").into())
+            })?;
 
             session
                 .uid_mv(uid.to_string(), "[Gmail]/Trash")
@@ -529,9 +543,9 @@ impl GmailTool {
             let (email, password) = get_creds(&secrets)?;
             let mut session = connect_imap_blocking(&email, &password)?;
 
-            session
-                .select(&mailbox)
-                .map_err(|e| Error::ToolExecution(format!("select {mailbox} failed: {e}").into()))?;
+            session.select(&mailbox).map_err(|e| {
+                Error::ToolExecution(format!("select {mailbox} failed: {e}").into())
+            })?;
 
             if read {
                 session
@@ -570,18 +584,17 @@ impl GmailTool {
             let mut session = connect_imap_blocking(&email, &password)?;
 
             // First, fetch the target message to get its References/In-Reply-To/Message-ID.
-            session
-                .select(&mailbox)
-                .map_err(|e| Error::ToolExecution(format!("select {mailbox} failed: {e}").into()))?;
+            session.select(&mailbox).map_err(|e| {
+                Error::ToolExecution(format!("select {mailbox} failed: {e}").into())
+            })?;
 
             let fetches = session
                 .uid_fetch(uid.to_string(), "(UID RFC822)")
                 .map_err(|e| Error::ToolExecution(format!("fetch uid {uid} failed: {e}").into()))?;
 
-            let fetch = fetches
-                .iter()
-                .next()
-                .ok_or_else(|| Error::ToolExecution(format!("message uid {uid} not found").into()))?;
+            let fetch = fetches.iter().next().ok_or_else(|| {
+                Error::ToolExecution(format!("message uid {uid} not found").into())
+            })?;
 
             let raw = fetch.body().unwrap_or_default();
             let parsed = mail_parser::MessageParser::default()
@@ -632,7 +645,9 @@ impl GmailTool {
                     all_uids.extend(uids);
                 }
                 // Also try standard HEADER search as fallback.
-                let query2 = format!("OR HEADER Message-ID \"<{escaped}>\" HEADER References \"<{escaped}>\"");
+                let query2 = format!(
+                    "OR HEADER Message-ID \"<{escaped}>\" HEADER References \"<{escaped}>\""
+                );
                 if let Ok(uids) = session.uid_search(&query2) {
                     all_uids.extend(uids);
                 }
@@ -681,11 +696,16 @@ impl GmailTool {
                     .unwrap_or_default();
                 let to: Vec<String> = msg
                     .to()
-                    .map(|addrs| addrs.iter().map(|a| {
-                        a.name()
-                            .map(|n| format!("{n} <{}>", a.address().unwrap_or("")))
-                            .unwrap_or_else(|| a.address().unwrap_or("").to_string())
-                    }).collect())
+                    .map(|addrs| {
+                        addrs
+                            .iter()
+                            .map(|a| {
+                                a.name()
+                                    .map(|n| format!("{n} <{}>", a.address().unwrap_or("")))
+                                    .unwrap_or_else(|| a.address().unwrap_or("").to_string())
+                            })
+                            .collect()
+                    })
                     .unwrap_or_default();
                 let date = msg.date().map(|d| d.to_string()).unwrap_or_default();
                 let message_id = msg.message_id().unwrap_or("").to_string();
@@ -740,13 +760,11 @@ impl GmailTool {
             .as_u64()
             .ok_or_else(|| Error::ToolExecution("missing 'uid'".into()))?
             as u32;
-        let attachment_index: usize = args["attachment_index"]
-            .as_u64()
-            .ok_or_else(|| {
-                Error::ToolExecution(
-                    "missing 'attachment_index' (use read action to list attachments)".into(),
-                )
-            })? as usize;
+        let attachment_index: usize = args["attachment_index"].as_u64().ok_or_else(|| {
+            Error::ToolExecution(
+                "missing 'attachment_index' (use read action to list attachments)".into(),
+            )
+        })? as usize;
         let mailbox = args["mailbox"].as_str().unwrap_or("INBOX");
 
         let secrets = self.secrets.clone();

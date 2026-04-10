@@ -40,7 +40,11 @@ pub fn html_to_text(html: &str, include_links: bool) -> String {
 
                 let tag_lower = tag_name.to_lowercase();
                 let is_closing = tag_lower.starts_with('/');
-                let clean_tag = tag_lower.trim_start_matches('/').split_whitespace().next().unwrap_or("");
+                let clean_tag = tag_lower
+                    .trim_start_matches('/')
+                    .split_whitespace()
+                    .next()
+                    .unwrap_or("");
 
                 match clean_tag {
                     "script" | "style" | "noscript" | "svg" | "head" => {
@@ -64,8 +68,8 @@ pub fn html_to_text(html: &str, include_links: bool) -> String {
                             }
                         }
                     }
-                    "p" | "div" | "section" | "article" | "main" | "header" | "footer"
-                    | "nav" | "aside" | "blockquote" | "tr" | "table" => {
+                    "p" | "div" | "section" | "article" | "main" | "header" | "footer" | "nav"
+                    | "aside" | "blockquote" | "tr" | "table" => {
                         if !in_script_or_style {
                             if is_closing {
                                 if in_anchor {
@@ -84,11 +88,7 @@ pub fn html_to_text(html: &str, include_links: bool) -> String {
                     }
                     "h1" | "h2" | "h3" | "h4" | "h5" | "h6" => {
                         if !in_script_or_style {
-                            if is_closing {
-                                result.push_str("\n\n");
-                            } else {
-                                result.push_str("\n\n");
-                            }
+                            result.push_str("\n\n");
                         }
                     }
                     "li" => {
@@ -179,24 +179,12 @@ fn extract_href(tag_content: &str) -> String {
     if let Some(pos) = lower.find("href=") {
         let after_href = &tag_content[pos + 5..];
         let trimmed = after_href.trim_start();
-        if trimmed.starts_with('"') {
-            trimmed[1..]
-                .split('"')
-                .next()
-                .unwrap_or("")
-                .to_string()
-        } else if trimmed.starts_with('\'') {
-            trimmed[1..]
-                .split('\'')
-                .next()
-                .unwrap_or("")
-                .to_string()
+        if let Some(rest) = trimmed.strip_prefix('"') {
+            rest.split('"').next().unwrap_or("").to_string()
+        } else if let Some(rest) = trimmed.strip_prefix('\'') {
+            rest.split('\'').next().unwrap_or("").to_string()
         } else {
-            trimmed
-                .split_whitespace()
-                .next()
-                .unwrap_or("")
-                .to_string()
+            trimmed.split_whitespace().next().unwrap_or("").to_string()
         }
     } else {
         String::new()
