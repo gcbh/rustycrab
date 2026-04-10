@@ -53,7 +53,11 @@ impl NotionTool {
     }
 
     /// Build an authorized request to the Notion API.
-    fn notion_request(&self, method: reqwest::Method, path: &str) -> Result<reqwest::RequestBuilder> {
+    fn notion_request(
+        &self,
+        method: reqwest::Method,
+        path: &str,
+    ) -> Result<reqwest::RequestBuilder> {
         let token = self.get_token()?;
         let url = format!("{NOTION_API_BASE}{path}");
         Ok(self
@@ -66,9 +70,10 @@ impl NotionTool {
 
     /// Send a request and parse the JSON response, returning a friendly error on failure.
     async fn send_and_parse(&self, req: reqwest::RequestBuilder) -> Result<Value> {
-        let resp = req.send().await.map_err(|e| {
-            Error::ToolExecution(format!("Notion API request failed: {e}").into())
-        })?;
+        let resp = req
+            .send()
+            .await
+            .map_err(|e| Error::ToolExecution(format!("Notion API request failed: {e}").into()))?;
 
         let status = resp.status();
         let body = resp.text().await.map_err(|e| {
@@ -104,9 +109,7 @@ impl NotionTool {
             self.secrets
                 .set(KEY_DEFAULT_PARENT, parent_id)
                 .map_err(|e| {
-                    Error::ToolExecution(
-                        format!("failed to store default parent: {e}").into(),
-                    )
+                    Error::ToolExecution(format!("failed to store default parent: {e}").into())
                 })?;
         }
 
@@ -565,7 +568,10 @@ impl NotionTool {
                 "children": chunk,
             });
             let req = self
-                .notion_request(reqwest::Method::PATCH, &format!("/blocks/{page_id}/children"))?
+                .notion_request(
+                    reqwest::Method::PATCH,
+                    &format!("/blocks/{page_id}/children"),
+                )?
                 .json(&body);
             self.send_and_parse(req).await?;
         }
@@ -918,7 +924,10 @@ fn markdown_to_blocks(md: &str) -> Vec<Value> {
         }
 
         // Checklist items.
-        if let Some(rest) = trimmed.strip_prefix("- [x] ").or_else(|| trimmed.strip_prefix("- [X] ")) {
+        if let Some(rest) = trimmed
+            .strip_prefix("- [x] ")
+            .or_else(|| trimmed.strip_prefix("- [X] "))
+        {
             blocks.push(json!({
                 "type": "to_do",
                 "to_do": {
@@ -942,7 +951,10 @@ fn markdown_to_blocks(md: &str) -> Vec<Value> {
         }
 
         // Bulleted list items.
-        if let Some(rest) = trimmed.strip_prefix("- ").or_else(|| trimmed.strip_prefix("* ")) {
+        if let Some(rest) = trimmed
+            .strip_prefix("- ")
+            .or_else(|| trimmed.strip_prefix("* "))
+        {
             blocks.push(json!({
                 "type": "bulleted_list_item",
                 "bulleted_list_item": { "rich_text": rich_text_from_inline(rest) }

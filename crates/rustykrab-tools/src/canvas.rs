@@ -11,7 +11,10 @@ pub struct CanvasTool {
 impl CanvasTool {
     pub fn new() -> Self {
         Self {
-            client: reqwest::Client::new(),
+            client: reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(30))
+                .build()
+                .expect("failed to build HTTP client"),
         }
     }
 }
