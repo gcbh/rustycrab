@@ -73,12 +73,17 @@ fn validate_process_command(command: &str) -> std::result::Result<(), String> {
     }
 
     let base_cmd = command.split_whitespace().next().unwrap_or("");
-    let cmd_name = base_cmd.rsplit('/').next().unwrap_or(base_cmd);
 
-    if !ALLOWED_PROCESS_COMMANDS.contains(&cmd_name) {
+    // Reject absolute or relative paths to prevent allowlist bypass —
+    // e.g. /tmp/python would match "python" but execute a malicious binary.
+    if base_cmd.contains('/') {
+        return Err("absolute or relative paths are not allowed; use command names only".into());
+    }
+
+    if !ALLOWED_PROCESS_COMMANDS.contains(&base_cmd) {
         return Err(format!(
             "command '{}' is not allowed as a background process. Allowed: {}",
-            cmd_name,
+            base_cmd,
             ALLOWED_PROCESS_COMMANDS.join(", ")
         ));
     }
@@ -146,15 +151,53 @@ impl Tool for ProcessTool {
                     .split_first()
                     .ok_or_else(|| rustykrab_core::Error::ToolExecution("empty command".into()))?;
 
-                let child = tokio::process::Command::new(program)
-                    .args(cmd_args)
+                let mut cmd = tokio::process::Command::new(program);
+                cmd.args(cmd_args)
                     .stdin(std::process::Stdio::null())
                     .stdout(std::process::Stdio::null())
                     .stderr(std::process::Stdio::null())
-                    .env_clear()
-                    .env("PATH", "/usr/local/bin:/usr/bin:/bin")
-                    .env("HOME", std::env::var("HOME").unwrap_or_default())
-                    .env("LANG", "C.UTF-8")
+                    .env_clear();
+
+                // Forward safe environment variables needed by common tools
+                // (docker, kubectl, npm, ssh, etc.) while keeping secrets out.
+                const SAFE_ENV_VARS: &[&str] = &[
+                    "PATH",
+                    "HOME",
+                    "USER",
+                    "LOGNAME",
+                    "SHELL",
+                    "TERM",
+                    "LANG",
+                    "LC_ALL",
+                    "LC_CTYPE",
+                    "TMPDIR",
+                    "XDG_RUNTIME_DIR",
+                    "XDG_CONFIG_HOME",
+                    "XDG_DATA_HOME",
+                    "DOCKER_HOST",
+                    "DOCKER_CONFIG",
+                    "KUBECONFIG",
+                    "NODE_PATH",
+                    "NPM_CONFIG_PREFIX",
+                    "SSH_AUTH_SOCK",
+                    "CARGO_HOME",
+                    "RUSTUP_HOME",
+                    "GOPATH",
+                ];
+                for var_name in SAFE_ENV_VARS {
+                    if let Ok(val) = std::env::var(var_name) {
+                        cmd.env(var_name, val);
+                    }
+                }
+                // Ensure PATH and LANG always have sensible defaults
+                if std::env::var("PATH").is_err() {
+                    cmd.env("PATH", "/usr/local/bin:/usr/bin:/bin");
+                }
+                if std::env::var("LANG").is_err() {
+                    cmd.env("LANG", "C.UTF-8");
+                }
+
+                let child = cmd
                     .spawn()
                     .map_err(|e| rustykrab_core::Error::ToolExecution(e.to_string().into()))?;
 
@@ -219,34 +262,14 @@ impl Tool for ProcessTool {
                 }
             }
             "list" => {
-                let output = tokio::process::Command::new("ps")
-                    .args(["aux", "--no-headers"])
-                    .output()
-                    .await
-                    .map_err(|e| rustykrab_core::Error::ToolExecution(e.to_string().into()))?;
-
-                let stdout = String::from_utf8_lossy(&output.stdout);
-                let processes: Vec<Value> = stdout
-                    .lines()
-                    .filter(|line| !line.is_empty())
-                    .map(|line| {
-                        let parts: Vec<&str> = line.split_whitespace().collect();
-                        if parts.len() >= 11 {
-                            json!({
-                                "user": parts[0],
-                                "pid": parts[1],
-                                "cpu": parts[2],
-                                "mem": parts[3],
-                                "command": parts[10..].join(" "),
-                            })
-                        } else {
-                            json!({ "raw": line })
-                        }
-                    })
-                    .collect();
+                // Only list processes managed by this tool, not all system processes.
+                let children = self.children.lock().await;
+                let processes: Vec<Value> =
+                    children.keys().map(|pid| json!({ "pid": pid })).collect();
 
                 Ok(json!({
                     "action": "list",
+                    "count": processes.len(),
                     "processes": processes,
                 }))
             }

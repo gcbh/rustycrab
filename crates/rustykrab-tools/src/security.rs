@@ -172,7 +172,7 @@ fn is_private_ip(ip: &IpAddr) -> bool {
                 || v4.is_link_local()                // 169.254.0.0/16
                 || v4.is_broadcast()                 // 255.255.255.255
                 || v4.is_unspecified()               // 0.0.0.0
-                || v4.octets()[0] == 100 && v4.octets()[1] >= 64 && v4.octets()[1] <= 127
+                || (v4.octets()[0] == 100 && v4.octets()[1] >= 64 && v4.octets()[1] <= 127)
             // 100.64.0.0/10 (CGNAT)
         }
         IpAddr::V6(v6) => {
