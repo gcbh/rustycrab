@@ -155,9 +155,7 @@ impl OllamaProvider {
                         // Fix #195: propagate serialization errors.
                         let content = match &result.output {
                             serde_json::Value::String(s) => s.clone(),
-                            other => {
-                                serde_json::to_string(other).map_err(Error::Serialization)?
-                            }
+                            other => serde_json::to_string(other).map_err(Error::Serialization)?,
                         };
                         OllamaMessage {
                             role: role.to_string(),
@@ -429,12 +427,9 @@ impl ModelProvider for OllamaProvider {
                     continue;
                 }
 
-                let stream_chunk: OllamaStreamChunk =
-                    serde_json::from_str(&line).map_err(|e| {
-                        Error::ModelProvider(format!(
-                            "failed to parse Ollama stream chunk: {e}"
-                        ))
-                    })?;
+                let stream_chunk: OllamaStreamChunk = serde_json::from_str(&line).map_err(|e| {
+                    Error::ModelProvider(format!("failed to parse Ollama stream chunk: {e}"))
+                })?;
 
                 if let Some(ref content) = stream_chunk.message.content {
                     if !content.is_empty() {

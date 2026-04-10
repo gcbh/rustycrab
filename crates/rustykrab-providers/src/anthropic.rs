@@ -401,48 +401,31 @@ impl ModelProvider for AnthropicProvider {
                 } else if let Some(data) = line.strip_prefix("data: ") {
                     match current_event_type.as_str() {
                         "message_start" => {
-                            if let Ok(evt) =
-                                serde_json::from_str::<SseMessageStart>(data)
-                            {
+                            if let Ok(evt) = serde_json::from_str::<SseMessageStart>(data) {
                                 input_tokens = evt.message.usage.input_tokens;
-                                cache_read_tokens = evt
-                                    .message
-                                    .usage
-                                    .cache_read_input_tokens
-                                    .unwrap_or(0);
-                                cache_creation_tokens = evt
-                                    .message
-                                    .usage
-                                    .cache_creation_input_tokens
-                                    .unwrap_or(0);
+                                cache_read_tokens =
+                                    evt.message.usage.cache_read_input_tokens.unwrap_or(0);
+                                cache_creation_tokens =
+                                    evt.message.usage.cache_creation_input_tokens.unwrap_or(0);
                             }
                         }
                         "content_block_start" => {
-                            if let Ok(evt) =
-                                serde_json::from_str::<SseContentBlockStart>(data)
-                            {
-                                if let SseContentBlock::ToolUse { id, name } =
-                                    evt.content_block
-                                {
+                            if let Ok(evt) = serde_json::from_str::<SseContentBlockStart>(data) {
+                                if let SseContentBlock::ToolUse { id, name } = evt.content_block {
                                     tool_meta.insert(evt.index, (id, name));
-                                    tool_input_bufs
-                                        .insert(evt.index, String::new());
+                                    tool_input_bufs.insert(evt.index, String::new());
                                 }
                             }
                         }
                         "content_block_delta" => {
-                            if let Ok(evt) =
-                                serde_json::from_str::<SseContentBlockDelta>(data)
-                            {
+                            if let Ok(evt) = serde_json::from_str::<SseContentBlockDelta>(data) {
                                 match evt.delta {
                                     SseDelta::TextDelta { text } => {
                                         full_text.push_str(&text);
                                         on_event(StreamEvent::TextDelta(text));
                                     }
                                     SseDelta::InputJsonDelta { partial_json } => {
-                                        if let Some(buf) =
-                                            tool_input_bufs.get_mut(&evt.index)
-                                        {
+                                        if let Some(buf) = tool_input_bufs.get_mut(&evt.index) {
                                             buf.push_str(&partial_json);
                                         }
                                     }
@@ -452,20 +435,13 @@ impl ModelProvider for AnthropicProvider {
                         }
                         "content_block_stop" => {
                             // Finalize any tool call whose input is now complete.
-                            if let Ok(evt) =
-                                serde_json::from_str::<SseContentBlockStop>(data)
-                            {
-                                if let Some(json_buf) =
-                                    tool_input_bufs.remove(&evt.index)
-                                {
-                                    if let Some((id, name)) =
-                                        tool_meta.remove(&evt.index)
-                                    {
-                                        let input: serde_json::Value =
-                                            serde_json::from_str(&json_buf)
-                                                .unwrap_or(serde_json::Value::Object(
-                                                    Default::default(),
-                                                ));
+                            if let Ok(evt) = serde_json::from_str::<SseContentBlockStop>(data) {
+                                if let Some(json_buf) = tool_input_bufs.remove(&evt.index) {
+                                    if let Some((id, name)) = tool_meta.remove(&evt.index) {
+                                        let input: serde_json::Value = serde_json::from_str(
+                                            &json_buf,
+                                        )
+                                        .unwrap_or(serde_json::Value::Object(Default::default()));
                                         tool_calls.push(ToolCall {
                                             id,
                                             name,
@@ -476,12 +452,9 @@ impl ModelProvider for AnthropicProvider {
                             }
                         }
                         "message_delta" => {
-                            if let Ok(evt) =
-                                serde_json::from_str::<SseMessageDelta>(data)
-                            {
+                            if let Ok(evt) = serde_json::from_str::<SseMessageDelta>(data) {
                                 output_tokens = evt.usage.output_tokens;
-                                stop_reason = match evt.delta.stop_reason.as_deref()
-                                {
+                                stop_reason = match evt.delta.stop_reason.as_deref() {
                                     Some("tool_use") => StopReason::ToolUse,
                                     Some("max_tokens") => StopReason::MaxTokens,
                                     _ => StopReason::EndTurn,
