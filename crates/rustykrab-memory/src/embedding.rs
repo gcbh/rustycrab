@@ -127,8 +127,7 @@ impl Embedder for HashEmbedder {
                         hash = h.finalize().to_vec();
                         offset = 0;
                     }
-                    let bytes: [u8; 4] =
-                        hash[offset..offset + 4].try_into().unwrap_or([0; 4]);
+                    let bytes: [u8; 4] = hash[offset..offset + 4].try_into().unwrap_or([0; 4]);
                     // Map hash bytes to [-1, 1] deterministically without
                     // producing NaN/Inf (#131). Use integer interpretation
                     // instead of f32::from_bits which can produce NaN/Inf.

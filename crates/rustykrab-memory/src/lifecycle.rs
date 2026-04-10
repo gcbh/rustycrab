@@ -8,7 +8,7 @@ use uuid::Uuid;
 use crate::config::MemoryConfig;
 use crate::embedding::{cosine_similarity, Embedder};
 use crate::storage::MemoryStorage;
-use crate::types::{LifecycleStage, Memory, MemoryLink, LinkType};
+use crate::types::{LifecycleStage, LinkType, Memory, MemoryLink};
 
 /// Statistics from a lifecycle sweep operation.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -66,9 +66,7 @@ impl LifecycleManager {
             let age = now - mem.created_at;
 
             // Promotion criteria: accessed enough times AND old enough.
-            if mem.access_count >= self.config.promote_min_access_count
-                && age >= promote_age
-            {
+            if mem.access_count >= self.config.promote_min_access_count && age >= promote_age {
                 promotions.push((mem.id, LifecycleStage::Semantic));
                 continue;
             }
@@ -88,16 +86,10 @@ impl LifecycleManager {
         }
 
         if !promotions.is_empty() {
-            stats.promoted_to_semantic = self
-                .storage
-                .batch_update_stages(&promotions)
-                .await?;
+            stats.promoted_to_semantic = self.storage.batch_update_stages(&promotions).await?;
         }
         if !demotions.is_empty() {
-            stats.demoted_to_archival = self
-                .storage
-                .batch_update_stages(&demotions)
-                .await?;
+            stats.demoted_to_archival = self.storage.batch_update_stages(&demotions).await?;
         }
 
         // ── Tombstone: archival → tombstone ─────────────────────
@@ -119,10 +111,7 @@ impl LifecycleManager {
         }
 
         if !tombstones.is_empty() {
-            stats.tombstoned = self
-                .storage
-                .batch_update_stages(&tombstones)
-                .await?;
+            stats.tombstoned = self.storage.batch_update_stages(&tombstones).await?;
         }
 
         info!(
@@ -144,10 +133,7 @@ impl LifecycleManager {
     /// - <0.85: distinct, no link
     ///
     /// Bounded to 50 links per memory to prevent graph explosion.
-    pub async fn detect_near_duplicates(
-        &self,
-        agent_id: Uuid,
-    ) -> rustykrab_core::Result<u32> {
+    pub async fn detect_near_duplicates(&self, agent_id: Uuid) -> rustykrab_core::Result<u32> {
         let memories = self.storage.list_retrievable(agent_id).await?;
         if memories.len() < 2 {
             return Ok(0);
@@ -283,10 +269,7 @@ impl LifecycleManager {
                 }
 
                 // Re-embed the same content.
-                let new_embeddings = self
-                    .embedder
-                    .embed(vec![old_chunk.content.clone()])
-                    .await?;
+                let new_embeddings = self.embedder.embed(vec![old_chunk.content.clone()]).await?;
 
                 if let Some(new_emb) = new_embeddings.first() {
                     let sim = cosine_similarity(&old_chunk.embedding, new_emb);

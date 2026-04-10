@@ -20,15 +20,24 @@ fn compiled_patterns() -> &'static CompiledPatterns {
     static PATTERNS: OnceLock<CompiledPatterns> = OnceLock::new();
     PATTERNS.get_or_init(|| CompiledPatterns {
         preference: vec![
-            Regex::new(r"(?i)\b(?:i|we)\s+(?:prefer|like|love|enjoy|want)\s+(.+?)(?:\.|$|\n)").unwrap(),
-            Regex::new(r"(?i)\bmy\s+(?:favorite|preferred)\s+(?:\w+\s+)?is\s+(.+?)(?:\.|$|\n)").unwrap(),
-            Regex::new(r"(?i)\b(?:i|we)\s+(?:always|usually)\s+(?:use|choose)\s+(.+?)(?:\.|$|\n)").unwrap(),
+            Regex::new(r"(?i)\b(?:i|we)\s+(?:prefer|like|love|enjoy|want)\s+(.+?)(?:\.|$|\n)")
+                .unwrap(),
+            Regex::new(r"(?i)\bmy\s+(?:favorite|preferred)\s+(?:\w+\s+)?is\s+(.+?)(?:\.|$|\n)")
+                .unwrap(),
+            Regex::new(r"(?i)\b(?:i|we)\s+(?:always|usually)\s+(?:use|choose)\s+(.+?)(?:\.|$|\n)")
+                .unwrap(),
         ],
         decision: vec![
-            Regex::new(r"(?i)\b(?:i|we)\s+(?:decided|chose|picked|selected|went with)\s+(.+?)(?:\.|$|\n)").unwrap(),
+            Regex::new(
+                r"(?i)\b(?:i|we)\s+(?:decided|chose|picked|selected|went with)\s+(.+?)(?:\.|$|\n)",
+            )
+            .unwrap(),
             Regex::new(r"(?i)\blet'?s?\s+(?:go with|use|choose)\s+(.+?)(?:\.|$|\n)").unwrap(),
         ],
-        key_value: Regex::new(r"(?i)\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\s+is\s+(?:a\s+)?(\w[\w\s]{1,50}?)(?:\.|$|\n)").unwrap(),
+        key_value: Regex::new(
+            r"(?i)\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\s+is\s+(?:a\s+)?(\w[\w\s]{1,50}?)(?:\.|$|\n)",
+        )
+        .unwrap(),
         multi_word_entity: Regex::new(r"\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\b").unwrap(),
         sentence_start: Regex::new(r"(?:^|[.!?]\s+)\w").unwrap(),
         capitalized_word: Regex::new(r"\b([A-Z][a-z]{2,})\b").unwrap(),
@@ -185,10 +194,7 @@ mod tests {
         let content = "We decided to use PostgreSQL for the database.";
         let facts = RegexExtractor::extract(content, id);
 
-        let decisions: Vec<_> = facts
-            .iter()
-            .filter(|f| f.fact_type == "decision")
-            .collect();
+        let decisions: Vec<_> = facts.iter().filter(|f| f.fact_type == "decision").collect();
         assert!(!decisions.is_empty());
         assert!(decisions.iter().any(|f| f.object.contains("PostgreSQL")));
     }

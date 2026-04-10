@@ -273,13 +273,18 @@ pub async fn take_snapshot(
     let eval_js = format!(
         "({SNAPSHOT_JS}).apply(null, [{}, {}, {}])",
         options.max_depth,
-        if options.interactive_only { "true" } else { "false" },
+        if options.interactive_only {
+            "true"
+        } else {
+            "false"
+        },
         selector_arg,
     );
 
-    let result = page.evaluate(eval_js).await.map_err(|e| {
-        Error::ToolExecution(format!("snapshot failed: {e}").into())
-    })?;
+    let result = page
+        .evaluate(eval_js)
+        .await
+        .map_err(|e| Error::ToolExecution(format!("snapshot failed: {e}").into()))?;
 
     let raw_json: String = result.into_value().unwrap_or_else(|_| "[]".to_string());
     let elements: Vec<RawElement> = serde_json::from_str(&raw_json).unwrap_or_default();

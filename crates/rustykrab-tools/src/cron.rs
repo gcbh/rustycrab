@@ -64,21 +64,15 @@ impl Tool for CronTool {
 
         match action {
             "create" => {
-                let schedule = args["schedule"]
-                    .as_str()
-                    .ok_or_else(|| {
-                        rustykrab_core::Error::ToolExecution(
-                            "missing schedule for create action".into(),
-                        )
-                    })?;
+                let schedule = args["schedule"].as_str().ok_or_else(|| {
+                    rustykrab_core::Error::ToolExecution(
+                        "missing schedule for create action".into(),
+                    )
+                })?;
 
-                let task = args["task"]
-                    .as_str()
-                    .ok_or_else(|| {
-                        rustykrab_core::Error::ToolExecution(
-                            "missing task for create action".into(),
-                        )
-                    })?;
+                let task = args["task"].as_str().ok_or_else(|| {
+                    rustykrab_core::Error::ToolExecution("missing task for create action".into())
+                })?;
 
                 let result = self
                     .backend
@@ -104,13 +98,9 @@ impl Tool for CronTool {
                 }))
             }
             "delete" => {
-                let job_id = args["job_id"]
-                    .as_str()
-                    .ok_or_else(|| {
-                        rustykrab_core::Error::ToolExecution(
-                            "missing job_id for delete action".into(),
-                        )
-                    })?;
+                let job_id = args["job_id"].as_str().ok_or_else(|| {
+                    rustykrab_core::Error::ToolExecution("missing job_id for delete action".into())
+                })?;
 
                 let result = self
                     .backend

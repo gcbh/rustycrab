@@ -34,25 +34,46 @@ pub enum ToolErrorKind {
 
 impl ToolError {
     pub fn invalid_input(msg: impl Into<String>) -> Self {
-        Self { kind: ToolErrorKind::InvalidInput, message: msg.into() }
+        Self {
+            kind: ToolErrorKind::InvalidInput,
+            message: msg.into(),
+        }
     }
     pub fn not_found(msg: impl Into<String>) -> Self {
-        Self { kind: ToolErrorKind::NotFound, message: msg.into() }
+        Self {
+            kind: ToolErrorKind::NotFound,
+            message: msg.into(),
+        }
     }
     pub fn permission_denied(msg: impl Into<String>) -> Self {
-        Self { kind: ToolErrorKind::PermissionDenied, message: msg.into() }
+        Self {
+            kind: ToolErrorKind::PermissionDenied,
+            message: msg.into(),
+        }
     }
     pub fn timeout(msg: impl Into<String>) -> Self {
-        Self { kind: ToolErrorKind::Timeout, message: msg.into() }
+        Self {
+            kind: ToolErrorKind::Timeout,
+            message: msg.into(),
+        }
     }
     pub fn rate_limited(msg: impl Into<String>) -> Self {
-        Self { kind: ToolErrorKind::RateLimited, message: msg.into() }
+        Self {
+            kind: ToolErrorKind::RateLimited,
+            message: msg.into(),
+        }
     }
     pub fn transient(msg: impl Into<String>) -> Self {
-        Self { kind: ToolErrorKind::Transient, message: msg.into() }
+        Self {
+            kind: ToolErrorKind::Transient,
+            message: msg.into(),
+        }
     }
     pub fn internal(msg: impl Into<String>) -> Self {
-        Self { kind: ToolErrorKind::Internal, message: msg.into() }
+        Self {
+            kind: ToolErrorKind::Internal,
+            message: msg.into(),
+        }
     }
 }
 
@@ -64,13 +85,19 @@ impl fmt::Display for ToolError {
 
 impl From<String> for ToolError {
     fn from(s: String) -> Self {
-        Self { kind: ToolErrorKind::Internal, message: s }
+        Self {
+            kind: ToolErrorKind::Internal,
+            message: s,
+        }
     }
 }
 
 impl From<&str> for ToolError {
     fn from(s: &str) -> Self {
-        Self { kind: ToolErrorKind::Internal, message: s.to_string() }
+        Self {
+            kind: ToolErrorKind::Internal,
+            message: s.to_string(),
+        }
     }
 }
 

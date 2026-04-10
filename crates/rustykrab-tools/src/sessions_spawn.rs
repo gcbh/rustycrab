@@ -65,24 +65,25 @@ impl Tool for SessionsSpawnTool {
         // H7: Server-side depth tracking — ignore client-provided _depth.
         let current_depth = self.depth.load(Ordering::Acquire);
         if current_depth >= MAX_SPAWN_DEPTH {
-            return Err(rustykrab_core::Error::ToolExecution(format!(
-                "maximum session spawn depth ({MAX_SPAWN_DEPTH}) exceeded"
-            ).into()));
+            return Err(rustykrab_core::Error::ToolExecution(
+                format!("maximum session spawn depth ({MAX_SPAWN_DEPTH}) exceeded").into(),
+            ));
         }
 
         self.depth.fetch_add(1, Ordering::AcqRel);
         let result = async {
             let system_prompt = args["system_prompt"].as_str();
-            let capabilities = args["capabilities"]
-                .as_array()
-                .map(|arr| {
-                    arr.iter()
-                        .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                        .collect::<Vec<String>>()
-                });
+            let capabilities = args["capabilities"].as_array().map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .collect::<Vec<String>>()
+            });
 
-            self.manager.spawn_session(system_prompt, capabilities).await
-        }.await;
+            self.manager
+                .spawn_session(system_prompt, capabilities)
+                .await
+        }
+        .await;
         self.depth.fetch_sub(1, Ordering::AcqRel);
 
         result

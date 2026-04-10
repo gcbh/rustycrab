@@ -54,7 +54,10 @@ pub async fn origin_check_middleware(
     if let Some(origin) = request.headers().get(header::ORIGIN) {
         let origin_str = origin.to_str().unwrap_or("");
         if !state.origin_policy.is_allowed(origin_str) {
-            tracing::warn!(origin = origin_str, "rejected request from disallowed origin");
+            tracing::warn!(
+                origin = origin_str,
+                "rejected request from disallowed origin"
+            );
             return Err(StatusCode::FORBIDDEN);
         }
     }

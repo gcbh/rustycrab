@@ -39,17 +39,23 @@ impl Store {
     /// stored alongside the database.
     pub fn open(path: impl AsRef<Path>, master_key: Vec<u8>) -> Result<Self, Error> {
         let db = sled::open(path).map_err(|e| Error::Storage(e.to_string()))?;
-        let conversations_tree = db.open_tree("conversations")
+        let conversations_tree = db
+            .open_tree("conversations")
             .map_err(|e| Error::Storage(e.to_string()))?;
-        let secrets_tree = db.open_tree("secrets")
+        let secrets_tree = db
+            .open_tree("secrets")
             .map_err(|e| Error::Storage(e.to_string()))?;
-        let memories_tree = db.open_tree("memories")
+        let memories_tree = db
+            .open_tree("memories")
             .map_err(|e| Error::Storage(e.to_string()))?;
-        let kg_entities_tree = db.open_tree("kg_entities")
+        let kg_entities_tree = db
+            .open_tree("kg_entities")
             .map_err(|e| Error::Storage(e.to_string()))?;
-        let kg_relations_tree = db.open_tree("kg_relations")
+        let kg_relations_tree = db
+            .open_tree("kg_relations")
             .map_err(|e| Error::Storage(e.to_string()))?;
-        let kg_entity_names_tree = db.open_tree("kg_entity_names")
+        let kg_entity_names_tree = db
+            .open_tree("kg_entity_names")
             .map_err(|e| Error::Storage(e.to_string()))?;
         Ok(Self {
             db,
@@ -89,9 +95,7 @@ impl Store {
 
     /// Flush all pending writes to disk.
     pub fn flush(&self) -> Result<(), Error> {
-        self.db
-            .flush()
-            .map_err(|e| Error::Storage(e.to_string()))?;
+        self.db.flush().map_err(|e| Error::Storage(e.to_string()))?;
         Ok(())
     }
 }

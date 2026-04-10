@@ -106,8 +106,11 @@ fn dp_set(service: &str, account: &str, password: &[u8]) -> Result<(), Error> {
 
     // Legacy keychain fallback: delete then add to avoid duplicate errors.
     let _ = delete_generic_password(service, account);
-    set_generic_password(service, account, password)
-        .map_err(|e| Error::Storage(format!("keychain write failed for {service}/{account}: {e}")))
+    set_generic_password(service, account, password).map_err(|e| {
+        Error::Storage(format!(
+            "keychain write failed for {service}/{account}: {e}"
+        ))
+    })
 }
 
 /// Delete a generic password from the keychain (Data Protection, then legacy).
@@ -133,8 +136,11 @@ fn dp_delete(service: &str, account: &str) -> Result<(), Error> {
         }
     }
 
-    delete_generic_password(service, account)
-        .map_err(|e| Error::Storage(format!("keychain delete failed for {service}/{account}: {e}")))
+    delete_generic_password(service, account).map_err(|e| {
+        Error::Storage(format!(
+            "keychain delete failed for {service}/{account}: {e}"
+        ))
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -259,8 +265,9 @@ pub fn keychain_available() -> bool {
 pub fn get_credential(service: &str, account: &str) -> Result<Option<KeychainCredential>, Error> {
     match dp_get(service, account)? {
         Some(bytes) => {
-            let value = String::from_utf8(bytes)
-                .map_err(|e| Error::Storage(format!("keychain: credential is not valid utf-8: {e}")))?;
+            let value = String::from_utf8(bytes).map_err(|e| {
+                Error::Storage(format!("keychain: credential is not valid utf-8: {e}"))
+            })?;
             Ok(Some(KeychainCredential {
                 service: service.to_string(),
                 account: account.to_string(),

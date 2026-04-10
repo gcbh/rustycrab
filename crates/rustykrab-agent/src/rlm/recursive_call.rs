@@ -106,7 +106,10 @@ async fn execute_call_impl(
 
     let budget = context_mgr.child_budget(call.context_budget, call.depth);
     if budget == 0 {
-        tracing::warn!(depth = call.depth, "RLM: budget exhausted, answering directly");
+        tracing::warn!(
+            depth = call.depth,
+            "RLM: budget exhausted, answering directly"
+        );
         return direct_call(&provider, &call.prompt, context.as_deref()).await;
     }
 
@@ -162,10 +165,7 @@ async fn execute_call_impl(
         return Ok(text.to_string());
     }
 
-    let sub_call_previews: Vec<&str> = sub_calls
-        .iter()
-        .map(|s| &s[..s.len().min(80)])
-        .collect();
+    let sub_call_previews: Vec<&str> = sub_calls.iter().map(|s| &s[..s.len().min(80)]).collect();
     tracing::info!(
         depth = call.depth,
         sub_calls = sub_calls.len(),
@@ -275,12 +275,7 @@ async fn direct_call(
     });
 
     let response = provider.chat(&messages, &[]).await?;
-    Ok(response
-        .message
-        .content
-        .as_text()
-        .unwrap_or("")
-        .to_string())
+    Ok(response.message.content.as_text().unwrap_or("").to_string())
 }
 
 /// Extract sub-call prompts from model output.

@@ -43,11 +43,7 @@ impl MemoryBackend for MemoryAdapter {
     async fn get(&self, memory_id: &str) -> rustykrab_core::Result<serde_json::Value> {
         self.inner.get(memory_id).await
     }
-    async fn save(
-        &self,
-        fact: &str,
-        tags: &[String],
-    ) -> rustykrab_core::Result<serde_json::Value> {
+    async fn save(&self, fact: &str, tags: &[String]) -> rustykrab_core::Result<serde_json::Value> {
         self.inner.save(fact, tags).await
     }
     async fn delete(&self, memory_id: &str) -> rustykrab_core::Result<serde_json::Value> {
@@ -112,8 +108,8 @@ async fn main() -> anyhow::Result<()> {
     let auth_token = resolve_auth_token(&store);
 
     // --- Model provider ---
-    let provider_name = std::env::var("RUSTYKRAB_PROVIDER")
-        .unwrap_or_else(|_| "anthropic".to_string());
+    let provider_name =
+        std::env::var("RUSTYKRAB_PROVIDER").unwrap_or_else(|_| "anthropic".to_string());
     let provider_name = provider_name.trim().to_lowercase();
     let provider: Arc<dyn ModelProvider> = match provider_name.as_str() {
         "ollama" => {
@@ -141,8 +137,7 @@ async fn main() -> anyhow::Result<()> {
     // --- Memory system (hybrid retrieval: vector + BM25 + temporal + graph) ---
     let memory_db_path = data_dir.join("memory.db");
     let memory_storage = Arc::new(
-        SqliteMemoryStorage::open(&memory_db_path)
-            .expect("failed to open memory database"),
+        SqliteMemoryStorage::open(&memory_db_path).expect("failed to open memory database"),
     );
     let embedder = Arc::new(HashEmbedder::new(768));
     let memory_system = Arc::new(MemorySystem::new(
@@ -153,11 +148,7 @@ async fn main() -> anyhow::Result<()> {
     let agent_id = Uuid::new_v4();
     let session_id = Uuid::new_v4();
     let memory_backend: Arc<dyn MemoryBackend> = Arc::new(MemoryAdapter {
-        inner: HybridMemoryBackend::new(
-            Arc::clone(&memory_system),
-            agent_id,
-            session_id,
-        ),
+        inner: HybridMemoryBackend::new(Arc::clone(&memory_system), agent_id, session_id),
     });
     tracing::info!("memory system initialized");
 
@@ -193,7 +184,9 @@ async fn main() -> anyhow::Result<()> {
         tracing::info!("orchestration pipeline enabled");
         Some(Arc::new(pipeline))
     } else {
-        tracing::info!("orchestration pipeline disabled (set RUSTYKRAB_ORCHESTRATION=true to enable)");
+        tracing::info!(
+            "orchestration pipeline disabled (set RUSTYKRAB_ORCHESTRATION=true to enable)"
+        );
         None
     };
 
@@ -282,8 +275,8 @@ async fn main() -> anyhow::Result<()> {
 
     // --- Signal channel (optional) ---
     if let Ok(account_number) = std::env::var("SIGNAL_ACCOUNT") {
-        let base_url = std::env::var("SIGNAL_CLI_URL")
-            .unwrap_or_else(|_| "http://localhost:8080".to_string());
+        let base_url =
+            std::env::var("SIGNAL_CLI_URL").unwrap_or_else(|_| "http://localhost:8080".to_string());
 
         let allowed_numbers: HashSet<String> = std::env::var("SIGNAL_ALLOWED_NUMBERS")
             .unwrap_or_default()
@@ -294,8 +287,11 @@ async fn main() -> anyhow::Result<()> {
 
         let webhook_secret = std::env::var("SIGNAL_WEBHOOK_SECRET").ok();
 
-        let mut sig =
-            rustykrab_channels::SignalChannel::new(base_url.clone(), account_number.clone(), allowed_numbers.clone());
+        let mut sig = rustykrab_channels::SignalChannel::new(
+            base_url.clone(),
+            account_number.clone(),
+            allowed_numbers.clone(),
+        );
         if let Some(secret) = webhook_secret {
             sig = sig.with_webhook_secret(secret);
         }
@@ -455,7 +451,10 @@ async fn telegram_agent_loop(
                     states.remove(&chat_id);
                 }
                 let _ = tg
-                    .send_text(chat_id, "Conversation reset. Send a new message to start fresh.")
+                    .send_text(
+                        chat_id,
+                        "Conversation reset. Send a new message to start fresh.",
+                    )
                     .await;
                 return;
             }
@@ -468,13 +467,21 @@ async fn telegram_agent_loop(
                     None => match state.store.conversations().create() {
                         Ok(conv) => {
                             let id = conv.id;
-                            states.insert(chat_id, ChatState { conv_id: id, busy: false });
+                            states.insert(
+                                chat_id,
+                                ChatState {
+                                    conv_id: id,
+                                    busy: false,
+                                },
+                            );
                             tracing::info!(chat_id, conv_id = %id, "created new conversation for Telegram chat");
                             id
                         }
                         Err(e) => {
                             tracing::error!(chat_id, "failed to create conversation: {e}");
-                            let _ = tg.send_text(chat_id, "Internal error — please try again.").await;
+                            let _ = tg
+                                .send_text(chat_id, "Internal error — please try again.")
+                                .await;
                             return;
                         }
                     },
@@ -490,7 +497,12 @@ async fn telegram_agent_loop(
             }
 
             let reply = process_telegram_message(
-                &state, &tg, chat_id, conv_id, channel_msg.message, &user_text,
+                &state,
+                &tg,
+                chat_id,
+                conv_id,
+                channel_msg.message,
+                &user_text,
             )
             .await;
 
@@ -560,8 +572,7 @@ async fn process_telegram_message(
         hb.store(epoch_millis(), Ordering::Relaxed);
     };
 
-    let agent_fut =
-        rustykrab_gateway::run_agent_streaming(state, &mut conv, user_text, &on_event);
+    let agent_fut = rustykrab_gateway::run_agent_streaming(state, &mut conv, user_text, &on_event);
 
     let timeout_millis = HEARTBEAT_TIMEOUT_SECS * 1000;
     let heartbeat_monitor = async {
@@ -700,7 +711,7 @@ fn handle_skill_subcommand(data_dir: &std::path::Path, args: &[String]) -> anyho
                 println!("  Place skill directories containing SKILL.md here.");
                 return Ok(());
             }
-            println!("{:<24} {:<10} {}", "NAME", "STATUS", "DESCRIPTION");
+            println!("{:<24} {:<10} DESCRIPTION", "NAME", "STATUS");
             println!("{}", "-".repeat(60));
             for s in &skills {
                 let status = if s.validation.is_satisfied() {
@@ -771,7 +782,12 @@ fn resolve_auth_token(store: &rustykrab_store::Store) -> String {
     if let Ok(token) = std::env::var("RUSTYKRAB_AUTH_TOKEN") {
         tracing::info!("auth token loaded from RUSTYKRAB_AUTH_TOKEN env var");
         // Persist downward so removing the env var still works next time.
-        persist_credential(store, KEYCHAIN_ACCOUNT_AUTH_TOKEN, "rustykrab_auth_token", &token);
+        persist_credential(
+            store,
+            KEYCHAIN_ACCOUNT_AUTH_TOKEN,
+            "rustykrab_auth_token",
+            &token,
+        );
         return token;
     }
 
@@ -805,7 +821,12 @@ fn resolve_auth_token(store: &rustykrab_store::Store) -> String {
     let token = rustykrab_gateway::generate_token();
     tracing::info!("generated new auth token — persisting for future restarts");
     println!("\n  Auth token (also saved to Keychain/store): {token}\n");
-    persist_credential(store, KEYCHAIN_ACCOUNT_AUTH_TOKEN, "rustykrab_auth_token", &token);
+    persist_credential(
+        store,
+        KEYCHAIN_ACCOUNT_AUTH_TOKEN,
+        "rustykrab_auth_token",
+        &token,
+    );
     token
 }
 
@@ -880,25 +901,38 @@ fn handle_keychain_subcommand(data_dir: &std::path::Path, args: &[String]) -> an
 
     match sub {
         "status" => {
-            println!("macOS Keychain support: {}", if rustykrab_store::keychain::keychain_available() {
-                "available (Data Protection Keychain)"
-            } else {
-                "not available (this platform does not support macOS Keychain)"
-            });
+            println!(
+                "macOS Keychain support: {}",
+                if rustykrab_store::keychain::keychain_available() {
+                    "available (Data Protection Keychain)"
+                } else {
+                    "not available (this platform does not support macOS Keychain)"
+                }
+            );
 
             if !rustykrab_store::keychain::keychain_available() {
-                println!("\nOn non-macOS platforms, use environment variables or the encrypted store.");
+                println!(
+                    "\nOn non-macOS platforms, use environment variables or the encrypted store."
+                );
                 return Ok(());
             }
 
             // Check each known credential.
             let checks = [
-                ("Master key", "com.rustykrab.master-key", "rustykrab-encryption-key"),
+                (
+                    "Master key",
+                    "com.rustykrab.master-key",
+                    "rustykrab-encryption-key",
+                ),
                 ("Auth token", KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT_AUTH_TOKEN),
-                ("Anthropic API key", KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT_API_KEY),
+                (
+                    "Anthropic API key",
+                    KEYCHAIN_SERVICE,
+                    KEYCHAIN_ACCOUNT_API_KEY,
+                ),
             ];
 
-            println!("\n{:<25} {:<40} {}", "CREDENTIAL", "SERVICE/ACCOUNT", "STATUS");
+            println!("\n{:<25} {:<40} STATUS", "CREDENTIAL", "SERVICE/ACCOUNT");
             println!("{}", "-".repeat(80));
             for (label, service, account) in &checks {
                 let status = match rustykrab_store::keychain::get_credential(service, account) {
@@ -913,13 +947,15 @@ fn handle_keychain_subcommand(data_dir: &std::path::Path, args: &[String]) -> an
         }
 
         "set" => {
-            let name = args.get(1).ok_or_else(|| anyhow::anyhow!(
-                "usage: rustykrab-cli keychain set <name> <value>\n  \
+            let name = args.get(1).ok_or_else(|| {
+                anyhow::anyhow!(
+                    "usage: rustykrab-cli keychain set <name> <value>\n  \
                  names: auth-token, api-key"
-            ))?;
-            let value = args.get(2).ok_or_else(|| anyhow::anyhow!(
-                "usage: rustykrab-cli keychain set <name> <value>"
-            ))?;
+                )
+            })?;
+            let value = args.get(2).ok_or_else(|| {
+                anyhow::anyhow!("usage: rustykrab-cli keychain set <name> <value>")
+            })?;
 
             if !rustykrab_store::keychain::keychain_available() {
                 anyhow::bail!("macOS Keychain is not available on this platform");
@@ -968,7 +1004,9 @@ fn handle_keychain_subcommand(data_dir: &std::path::Path, args: &[String]) -> an
             }
 
             println!("Migrating credentials to Data Protection Keychain...");
-            println!("(This re-creates items without per-app ACLs so no password prompts occur.)\n");
+            println!(
+                "(This re-creates items without per-app ACLs so no password prompts occur.)\n"
+            );
 
             // Re-resolve master key — this migrates it to the DP keychain.
             match rustykrab_store::keychain::resolve_master_key() {
@@ -984,19 +1022,25 @@ fn handle_keychain_subcommand(data_dir: &std::path::Path, args: &[String]) -> an
                         // Auth token
                         if let Ok(token) = store.secrets().get("rustykrab_auth_token") {
                             match rustykrab_store::keychain::set_credential(
-                                KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT_AUTH_TOKEN, &token,
+                                KEYCHAIN_SERVICE,
+                                KEYCHAIN_ACCOUNT_AUTH_TOKEN,
+                                &token,
                             ) {
                                 Ok(()) => println!("  auth token: migrated to DP Keychain"),
                                 Err(e) => println!("  auth token: FAILED ({e})"),
                             }
                         } else {
-                            println!("  auth token: not in store (will be generated on next start)");
+                            println!(
+                                "  auth token: not in store (will be generated on next start)"
+                            );
                         }
 
                         // API key
                         if let Ok(key) = store.secrets().get("anthropic_api_key") {
                             match rustykrab_store::keychain::set_credential(
-                                KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT_API_KEY, &key,
+                                KEYCHAIN_SERVICE,
+                                KEYCHAIN_ACCOUNT_API_KEY,
+                                &key,
                             ) {
                                 Ok(()) => println!("  API key: migrated to DP Keychain"),
                                 Err(e) => println!("  API key: FAILED ({e})"),
@@ -1007,7 +1051,10 @@ fn handle_keychain_subcommand(data_dir: &std::path::Path, args: &[String]) -> an
                     }
                 }
             } else {
-                println!("  No database found at {} — skipping store migration", db_path.display());
+                println!(
+                    "  No database found at {} — skipping store migration",
+                    db_path.display()
+                );
             }
 
             println!("\nMigration complete. Restart rustykrab-cli to verify.");
@@ -1016,9 +1063,13 @@ fn handle_keychain_subcommand(data_dir: &std::path::Path, args: &[String]) -> an
         _ => {
             eprintln!("Unknown keychain subcommand: {sub}");
             eprintln!("Usage:");
-            eprintln!("  rustykrab-cli keychain status              Show Keychain credential status");
+            eprintln!(
+                "  rustykrab-cli keychain status              Show Keychain credential status"
+            );
             eprintln!("  rustykrab-cli keychain set <name> <value>  Store a credential");
-            eprintln!("  rustykrab-cli keychain migrate             Migrate to Data Protection Keychain");
+            eprintln!(
+                "  rustykrab-cli keychain migrate             Migrate to Data Protection Keychain"
+            );
             eprintln!();
             eprintln!("Credential names: auth-token, api-key, or <service>:<account>");
             std::process::exit(1);

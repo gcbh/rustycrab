@@ -109,10 +109,9 @@ impl Tool for SkillCreateTool {
         // Reject if skill already exists
         let skill_dir = self.skills_dir.join(name);
         if skill_dir.exists() {
-            return Err(Error::ToolExecution(format!(
-                "skill '{name}' already exists at {}",
-                skill_dir.display()
-            ).into()));
+            return Err(Error::ToolExecution(
+                format!("skill '{name}' already exists at {}", skill_dir.display()).into(),
+            ));
         }
 
         // Optional fields
@@ -156,9 +155,9 @@ impl Tool for SkillCreateTool {
 
         // Write to disk using tokio::fs to avoid blocking the async
         // runtime (fixes ASYNC-M3).
-        tokio::fs::create_dir_all(&skill_dir)
-            .await
-            .map_err(|e| Error::ToolExecution(format!("failed to create skill directory: {e}").into()))?;
+        tokio::fs::create_dir_all(&skill_dir).await.map_err(|e| {
+            Error::ToolExecution(format!("failed to create skill directory: {e}").into())
+        })?;
 
         let path = skill_dir.join("SKILL.md");
         tokio::fs::write(&path, &content)

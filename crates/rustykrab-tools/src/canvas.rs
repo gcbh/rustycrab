@@ -67,9 +67,11 @@ impl Tool for CanvasTool {
 
         match action {
             "present" => {
-                let content = args["content"]
-                    .as_str()
-                    .ok_or_else(|| rustykrab_core::Error::ToolExecution("missing content for present action".into()))?;
+                let content = args["content"].as_str().ok_or_else(|| {
+                    rustykrab_core::Error::ToolExecution(
+                        "missing content for present action".into(),
+                    )
+                })?;
 
                 if let Some(api_url) = &canvas_api_url {
                     let resp = self
@@ -78,12 +80,17 @@ impl Tool for CanvasTool {
                         .json(&json!({"action": "present", "content": content}))
                         .send()
                         .await
-                        .map_err(|e| rustykrab_core::Error::ToolExecution(format!("canvas present failed: {e}").into()))?;
+                        .map_err(|e| {
+                            rustykrab_core::Error::ToolExecution(
+                                format!("canvas present failed: {e}").into(),
+                            )
+                        })?;
 
-                    let body = resp
-                        .text()
-                        .await
-                        .map_err(|e| rustykrab_core::Error::ToolExecution(format!("failed to read response: {e}").into()))?;
+                    let body = resp.text().await.map_err(|e| {
+                        rustykrab_core::Error::ToolExecution(
+                            format!("failed to read response: {e}").into(),
+                        )
+                    })?;
 
                     Ok(json!({
                         "action": "present",
@@ -102,9 +109,11 @@ impl Tool for CanvasTool {
                 }
             }
             "evaluate" => {
-                let expression = args["expression"]
-                    .as_str()
-                    .ok_or_else(|| rustykrab_core::Error::ToolExecution("missing expression for evaluate action".into()))?;
+                let expression = args["expression"].as_str().ok_or_else(|| {
+                    rustykrab_core::Error::ToolExecution(
+                        "missing expression for evaluate action".into(),
+                    )
+                })?;
 
                 let api_url = canvas_api_url.ok_or_else(|| {
                     rustykrab_core::Error::ToolExecution(
@@ -118,12 +127,17 @@ impl Tool for CanvasTool {
                     .json(&json!({"action": "evaluate", "expression": expression}))
                     .send()
                     .await
-                    .map_err(|e| rustykrab_core::Error::ToolExecution(format!("canvas evaluate failed: {e}").into()))?;
+                    .map_err(|e| {
+                        rustykrab_core::Error::ToolExecution(
+                            format!("canvas evaluate failed: {e}").into(),
+                        )
+                    })?;
 
-                let body = resp
-                    .text()
-                    .await
-                    .map_err(|e| rustykrab_core::Error::ToolExecution(format!("failed to read response: {e}").into()))?;
+                let body = resp.text().await.map_err(|e| {
+                    rustykrab_core::Error::ToolExecution(
+                        format!("failed to read response: {e}").into(),
+                    )
+                })?;
 
                 Ok(json!({
                     "action": "evaluate",
@@ -144,12 +158,17 @@ impl Tool for CanvasTool {
                     .json(&json!({"action": "snapshot"}))
                     .send()
                     .await
-                    .map_err(|e| rustykrab_core::Error::ToolExecution(format!("canvas snapshot failed: {e}").into()))?;
+                    .map_err(|e| {
+                        rustykrab_core::Error::ToolExecution(
+                            format!("canvas snapshot failed: {e}").into(),
+                        )
+                    })?;
 
-                let body = resp
-                    .text()
-                    .await
-                    .map_err(|e| rustykrab_core::Error::ToolExecution(format!("failed to read response: {e}").into()))?;
+                let body = resp.text().await.map_err(|e| {
+                    rustykrab_core::Error::ToolExecution(
+                        format!("failed to read response: {e}").into(),
+                    )
+                })?;
 
                 Ok(json!({
                     "action": "snapshot",
@@ -157,9 +176,9 @@ impl Tool for CanvasTool {
                     "result": body,
                 }))
             }
-            _ => Err(rustykrab_core::Error::ToolExecution(format!(
-                "unknown canvas action: {action}"
-            ).into())),
+            _ => Err(rustykrab_core::Error::ToolExecution(
+                format!("unknown canvas action: {action}").into(),
+            )),
         }
     }
 }

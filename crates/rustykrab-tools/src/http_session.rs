@@ -133,13 +133,11 @@ impl Tool for HttpSessionTool {
             .ok_or_else(|| Error::ToolExecution("missing url".into()))?;
 
         // SSRF protection: validate URL before making request
-        security::validate_url(url).await
+        security::validate_url(url)
+            .await
             .map_err(|e| Error::ToolExecution(e.into()))?;
 
-        let method = args["method"]
-            .as_str()
-            .unwrap_or("GET")
-            .to_uppercase();
+        let method = args["method"].as_str().unwrap_or("GET").to_uppercase();
 
         let client = self.get_or_create_client(session_name).await;
 
@@ -187,11 +185,7 @@ impl Tool for HttpSessionTool {
         let response_headers: HashMap<String, String> = resp
             .headers()
             .iter()
-            .filter_map(|(k, v)| {
-                v.to_str()
-                    .ok()
-                    .map(|val| (k.to_string(), val.to_string()))
-            })
+            .filter_map(|(k, v)| v.to_str().ok().map(|val| (k.to_string(), val.to_string())))
             .collect();
 
         let body = resp

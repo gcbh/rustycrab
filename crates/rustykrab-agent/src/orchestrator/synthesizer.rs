@@ -71,8 +71,14 @@ impl Synthesizer {
         }
 
         let prompt = SYNTHESIZE_PROMPT
-            .replace("{request}", &format!("<user_input>\n{original_request}\n</user_input>"))
-            .replace("{results}", &format!("<agent_response>\n{results_text}\n</agent_response>"));
+            .replace(
+                "{request}",
+                &format!("<user_input>\n{original_request}\n</user_input>"),
+            )
+            .replace(
+                "{results}",
+                &format!("<agent_response>\n{results_text}\n</agent_response>"),
+            );
 
         let mut messages = Vec::new();
         if let Some(ctx) = context {
@@ -91,11 +97,6 @@ impl Synthesizer {
         });
 
         let response = self.provider.chat(&messages, &[]).await?;
-        Ok(response
-            .message
-            .content
-            .as_text()
-            .unwrap_or("")
-            .to_string())
+        Ok(response.message.content.as_text().unwrap_or("").to_string())
     }
 }

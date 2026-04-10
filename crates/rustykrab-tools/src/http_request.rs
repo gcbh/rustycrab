@@ -68,16 +68,14 @@ impl Tool for HttpRequestTool {
     }
 
     async fn execute(&self, args: Value) -> Result<Value> {
-        let method = args["method"]
-            .as_str()
-            .unwrap_or("GET")
-            .to_uppercase();
+        let method = args["method"].as_str().unwrap_or("GET").to_uppercase();
         let url = args["url"]
             .as_str()
             .ok_or_else(|| rustykrab_core::Error::ToolExecution("missing url".into()))?;
 
         // SSRF protection: validate URL before making request
-        security::validate_url(url).await
+        security::validate_url(url)
+            .await
             .map_err(|e| rustykrab_core::Error::ToolExecution(e.into()))?;
 
         let mut req = match method.as_str() {

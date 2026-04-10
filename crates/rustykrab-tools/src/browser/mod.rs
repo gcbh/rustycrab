@@ -272,10 +272,12 @@ impl Tool for BrowserTool {
             }
 
             "open" => {
-                let url = args["url"]
-                    .as_str()
-                    .ok_or_else(|| Error::ToolExecution("'open' requires 'url' parameter".into()))?;
-                security::validate_url(url).await.map_err(|e| Error::ToolExecution(e.into()))?;
+                let url = args["url"].as_str().ok_or_else(|| {
+                    Error::ToolExecution("'open' requires 'url' parameter".into())
+                })?;
+                security::validate_url(url)
+                    .await
+                    .map_err(|e| Error::ToolExecution(e.into()))?;
                 let _ = self.manager.get_browser(&profile).await?;
                 self.manager.open_tab(&profile, url).await
             }
@@ -296,16 +298,18 @@ impl Tool for BrowserTool {
 
             // ── Navigation ─────────────────────────────────────────
             "navigate" => {
-                let url = args["url"]
-                    .as_str()
-                    .ok_or_else(|| Error::ToolExecution("'navigate' requires 'url' parameter".into()))?;
-                security::validate_url(url).await.map_err(|e| Error::ToolExecution(e.into()))?;
+                let url = args["url"].as_str().ok_or_else(|| {
+                    Error::ToolExecution("'navigate' requires 'url' parameter".into())
+                })?;
+                security::validate_url(url)
+                    .await
+                    .map_err(|e| Error::ToolExecution(e.into()))?;
 
                 let _ = self.manager.get_browser(&profile).await?;
                 let page = self.manager.get_page(&profile, target_id).await?;
-                page.goto(url).await.map_err(|e| {
-                    Error::ToolExecution(format!("navigation failed: {e}").into())
-                })?;
+                page.goto(url)
+                    .await
+                    .map_err(|e| Error::ToolExecution(format!("navigation failed: {e}").into()))?;
 
                 let timeout_ms = args["timeout_ms"].as_u64().unwrap_or(10_000);
                 let _ = tokio::time::timeout(
@@ -349,11 +353,11 @@ impl Tool for BrowserTool {
 
             // ── Act (ref-based actions) ────────────────────────────
             "act" => {
-                let ref_id = args["ref"]
-                    .as_str()
-                    .ok_or_else(|| Error::ToolExecution(
+                let ref_id = args["ref"].as_str().ok_or_else(|| {
+                    Error::ToolExecution(
                         "'act' requires 'ref' parameter from a previous snapshot".into(),
-                    ))?;
+                    )
+                })?;
                 let act_action = args["actAction"]
                     .as_str()
                     .ok_or_else(|| Error::ToolExecution(
@@ -418,14 +422,14 @@ impl Tool for BrowserTool {
                         Error::ToolExecution(format!("failed to get page HTML: {e}").into())
                     })?,
                     _ => {
-                        let result = page
-                            .evaluate("document.body.innerText")
-                            .await
-                            .map_err(|e| {
-                                Error::ToolExecution(
-                                    format!("failed to get page text: {e}").into(),
-                                )
-                            })?;
+                        let result =
+                            page.evaluate("document.body.innerText")
+                                .await
+                                .map_err(|e| {
+                                    Error::ToolExecution(
+                                        format!("failed to get page text: {e}").into(),
+                                    )
+                                })?;
                         result.into_value::<String>().unwrap_or_default()
                     }
                 };
@@ -453,11 +457,9 @@ impl Tool for BrowserTool {
                     ));
                 }
 
-                let expression = args["expression"]
-                    .as_str()
-                    .ok_or_else(|| Error::ToolExecution(
-                        "'evaluate' requires 'expression' parameter".into(),
-                    ))?;
+                let expression = args["expression"].as_str().ok_or_else(|| {
+                    Error::ToolExecution("'evaluate' requires 'expression' parameter".into())
+                })?;
 
                 let _ = self.manager.get_browser(&profile).await?;
                 let page = self.manager.get_page(&profile, target_id).await?;
@@ -485,8 +487,7 @@ impl Tool for BrowserTool {
                     "down" => format!("window.scrollBy(0, {amount}); window.scrollY"),
                     "up" => format!("window.scrollBy(0, -{amount}); window.scrollY"),
                     "bottom" => {
-                        "window.scrollTo(0, document.body.scrollHeight); window.scrollY"
-                            .to_string()
+                        "window.scrollTo(0, document.body.scrollHeight); window.scrollY".to_string()
                     }
                     "top" => "window.scrollTo(0, 0); window.scrollY".to_string(),
                     _ => {
@@ -499,9 +500,10 @@ impl Tool for BrowserTool {
                     }
                 };
 
-                let result = page.evaluate(js).await.map_err(|e| {
-                    Error::ToolExecution(format!("scroll failed: {e}").into())
-                })?;
+                let result = page
+                    .evaluate(js)
+                    .await
+                    .map_err(|e| Error::ToolExecution(format!("scroll failed: {e}").into()))?;
 
                 let scroll_y: f64 = result.into_value().unwrap_or(0.0);
 

@@ -69,16 +69,17 @@ impl Tool for TtsTool {
             .ok_or_else(|| rustykrab_core::Error::ToolExecution("missing output_path".into()))?;
 
         let api_url = std::env::var("TTS_API_URL").map_err(|_| {
-            rustykrab_core::Error::ToolExecution(
-                "TTS requires TTS_API_URL to be configured".into(),
-            )
+            rustykrab_core::Error::ToolExecution("TTS requires TTS_API_URL to be configured".into())
         })?;
 
         let api_key = std::env::var("TTS_API_KEY").unwrap_or_default();
 
         // Path traversal protection: validate output path before writing
-        let safe_output_path = crate::security::validate_path(output_path)
-            .map_err(|e| rustykrab_core::Error::ToolExecution(format!("output path validation failed: {e}").into()))?;
+        let safe_output_path = crate::security::validate_path(output_path).map_err(|e| {
+            rustykrab_core::Error::ToolExecution(
+                format!("output path validation failed: {e}").into(),
+            )
+        })?;
 
         let text_length = text.len();
 
@@ -91,19 +92,21 @@ impl Tool for TtsTool {
             req = req.header("Authorization", format!("Bearer {api_key}"));
         }
 
-        let resp = req
-            .send()
-            .await
-            .map_err(|e| rustykrab_core::Error::ToolExecution(format!("TTS request failed: {e}").into()))?;
+        let resp = req.send().await.map_err(|e| {
+            rustykrab_core::Error::ToolExecution(format!("TTS request failed: {e}").into())
+        })?;
 
-        let audio_bytes = resp
-            .bytes()
-            .await
-            .map_err(|e| rustykrab_core::Error::ToolExecution(format!("failed to read TTS response: {e}").into()))?;
+        let audio_bytes = resp.bytes().await.map_err(|e| {
+            rustykrab_core::Error::ToolExecution(format!("failed to read TTS response: {e}").into())
+        })?;
 
         tokio::fs::write(&safe_output_path, &audio_bytes)
             .await
-            .map_err(|e| rustykrab_core::Error::ToolExecution(format!("failed to save audio file: {e}").into()))?;
+            .map_err(|e| {
+                rustykrab_core::Error::ToolExecution(
+                    format!("failed to save audio file: {e}").into(),
+                )
+            })?;
 
         Ok(json!({
             "generated": true,

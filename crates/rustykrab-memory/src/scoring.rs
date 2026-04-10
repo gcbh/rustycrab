@@ -3,6 +3,9 @@ use uuid::Uuid;
 
 use crate::types::TurnMetadata;
 
+/// A ranked list with associated weight and retrieval source for RRF fusion.
+type RankedSourceList = (Vec<(Uuid, usize)>, f64, crate::types::RetrievalSource);
+
 /// Compute heuristic importance score for a piece of content.
 ///
 /// Returns a value in [0.0, 1.0] based on content features:
@@ -68,10 +71,29 @@ fn count_named_entities(content: &str) -> usize {
 /// Uses word-boundary matching to avoid false positives (#136).
 fn sentiment_intensity(content: &str) -> f64 {
     const STRONG_WORDS: &[&str] = &[
-        "love", "hate", "amazing", "terrible", "critical", "urgent",
-        "important", "essential", "never", "always", "must", "definitely",
-        "absolutely", "crucial", "disaster", "excellent", "perfect", "worst",
-        "best", "emergency", "breakthrough", "deadline", "required",
+        "love",
+        "hate",
+        "amazing",
+        "terrible",
+        "critical",
+        "urgent",
+        "important",
+        "essential",
+        "never",
+        "always",
+        "must",
+        "definitely",
+        "absolutely",
+        "crucial",
+        "disaster",
+        "excellent",
+        "perfect",
+        "worst",
+        "best",
+        "emergency",
+        "breakthrough",
+        "deadline",
+        "required",
     ];
 
     let lower = content.to_lowercase();
@@ -79,10 +101,7 @@ fn sentiment_intensity(content: &str) -> f64 {
         .split(|c: char| !c.is_alphanumeric())
         .filter(|w| !w.is_empty())
         .collect();
-    let matches = STRONG_WORDS
-        .iter()
-        .filter(|w| words.contains(w))
-        .count();
+    let matches = STRONG_WORDS.iter().filter(|w| words.contains(w)).count();
 
     (matches as f64 / 3.0).min(1.0) // 3+ strong words → max intensity
 }
@@ -150,10 +169,7 @@ fn has_temporal_markers(content: &str) -> bool {
 /// `k` is the RRF constant (default 60).
 ///
 /// Formula: `RRF_score(d) = Σ w_r / (k + rank_r(d))`
-pub fn rrf_fuse(
-    ranked_lists: &[(Vec<(Uuid, usize)>, f64)],
-    k: f64,
-) -> Vec<(Uuid, f64)> {
+pub fn rrf_fuse(ranked_lists: &[(Vec<(Uuid, usize)>, f64)], k: f64) -> Vec<(Uuid, f64)> {
     let mut scores: HashMap<Uuid, f64> = HashMap::new();
 
     for (list, weight) in ranked_lists {
@@ -169,7 +185,7 @@ pub fn rrf_fuse(
 
 /// Track which retrieval sources contributed to each fused result.
 pub fn rrf_fuse_with_sources(
-    ranked_lists: &[(Vec<(Uuid, usize)>, f64, crate::types::RetrievalSource)],
+    ranked_lists: &[RankedSourceList],
     k: f64,
 ) -> Vec<(Uuid, f64, Vec<crate::types::RetrievalSource>)> {
     let mut scores: HashMap<Uuid, f64> = HashMap::new();

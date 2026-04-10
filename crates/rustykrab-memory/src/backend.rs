@@ -65,9 +65,8 @@ impl HybridMemoryBackend {
 
     /// Get a specific memory by ID.
     pub async fn get(&self, memory_id: &str) -> rustykrab_core::Result<Value> {
-        let id = Uuid::parse_str(memory_id).map_err(|e| {
-            rustykrab_core::Error::Internal(format!("invalid memory ID: {e}"))
-        })?;
+        let id = Uuid::parse_str(memory_id)
+            .map_err(|e| rustykrab_core::Error::Internal(format!("invalid memory ID: {e}")))?;
 
         match self.system.get_memory(id).await? {
             Some(mem) => Ok(json!({
@@ -102,9 +101,8 @@ impl HybridMemoryBackend {
 
     /// Delete (invalidate) a memory by ID.
     pub async fn delete(&self, memory_id: &str) -> rustykrab_core::Result<Value> {
-        let id = Uuid::parse_str(memory_id).map_err(|e| {
-            rustykrab_core::Error::Internal(format!("invalid memory ID: {e}"))
-        })?;
+        let id = Uuid::parse_str(memory_id)
+            .map_err(|e| rustykrab_core::Error::Internal(format!("invalid memory ID: {e}")))?;
 
         self.system.invalidate_memory(id, None).await?;
 

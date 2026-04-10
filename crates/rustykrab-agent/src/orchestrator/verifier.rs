@@ -152,11 +152,7 @@ impl ConsistencyVoter {
     }
 
     /// Use the model to find consensus among responses.
-    async fn find_consensus(
-        &self,
-        question: &str,
-        responses: &[String],
-    ) -> Result<VoteResult> {
+    async fn find_consensus(&self, question: &str, responses: &[String]) -> Result<VoteResult> {
         let mut responses_text = String::new();
         for (i, resp) in responses.iter().enumerate() {
             responses_text.push_str(&format!("--- Response {} ---\n{}\n\n", i + 1, resp));
@@ -174,12 +170,7 @@ impl ConsistencyVoter {
         }];
 
         let result = self.provider.chat(&messages, &[]).await?;
-        let answer = result
-            .message
-            .content
-            .as_text()
-            .unwrap_or("")
-            .to_string();
+        let answer = result.message.content.as_text().unwrap_or("").to_string();
 
         // Estimate agreement by simple similarity check.
         let agreement_count = responses

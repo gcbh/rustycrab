@@ -46,15 +46,17 @@ pub fn validate_path(path: &str) -> Result<PathBuf, String> {
     let path_str = path_buf.to_string_lossy();
     for prefix in blocked_prefixes {
         if path_str.starts_with(prefix) {
-            return Err(format!("access to {prefix} is blocked for security reasons"));
+            return Err(format!(
+                "access to {prefix} is blocked for security reasons"
+            ));
         }
     }
 
     // For existing files, canonicalize to resolve symlinks and verify location
     if path_buf.exists() {
-        let canonical = path_buf.canonicalize().map_err(|e| {
-            format!("failed to resolve path: {e}")
-        })?;
+        let canonical = path_buf
+            .canonicalize()
+            .map_err(|e| format!("failed to resolve path: {e}"))?;
 
         let canonical_str = canonical.to_string_lossy();
         for prefix in blocked_prefixes {
@@ -71,9 +73,9 @@ pub fn validate_path(path: &str) -> Result<PathBuf, String> {
     // For new files, validate the parent exists and is safe
     if let Some(parent) = path_buf.parent() {
         if parent.exists() {
-            let canonical_parent = parent.canonicalize().map_err(|e| {
-                format!("failed to resolve parent directory: {e}")
-            })?;
+            let canonical_parent = parent
+                .canonicalize()
+                .map_err(|e| format!("failed to resolve parent directory: {e}"))?;
 
             let canonical_str = canonical_parent.to_string_lossy();
             for prefix in blocked_prefixes {
@@ -100,17 +102,19 @@ pub fn validate_path(path: &str) -> Result<PathBuf, String> {
 /// DNS resolution uses `tokio::net::lookup_host` to avoid blocking the
 /// async runtime (fixes ASYNC-H1).
 pub async fn validate_url(url: &str) -> Result<(), String> {
-    let parsed = url::Url::parse(url)
-        .map_err(|e| format!("invalid URL: {e}"))?;
+    let parsed = url::Url::parse(url).map_err(|e| format!("invalid URL: {e}"))?;
 
     // Only allow http and https schemes
     match parsed.scheme() {
         "http" | "https" => {}
-        other => return Err(format!("URL scheme '{other}' is not allowed (only http/https)")),
+        other => {
+            return Err(format!(
+                "URL scheme '{other}' is not allowed (only http/https)"
+            ))
+        }
     }
 
-    let host = parsed.host_str()
-        .ok_or("URL must have a host")?;
+    let host = parsed.host_str().ok_or("URL must have a host")?;
 
     // Check for IP-based hosts
     if let Ok(ip) = host.parse::<IpAddr>() {
@@ -130,7 +134,9 @@ pub async fn validate_url(url: &str) -> Result<(), String> {
     let host_lower = host.to_lowercase();
     for blocked in &blocked_hosts {
         if host_lower == *blocked {
-            return Err(format!("requests to '{host}' are blocked (SSRF protection)"));
+            return Err(format!(
+                "requests to '{host}' are blocked (SSRF protection)"
+            ));
         }
     }
 
@@ -141,15 +147,15 @@ pub async fn validate_url(url: &str) -> Result<(), String> {
 
     // Resolve hostname and check all IPs against private ranges to prevent DNS rebinding.
     // Uses tokio::net::lookup_host for non-blocking async DNS resolution.
-    let port = parsed.port().unwrap_or(if parsed.scheme() == "https" { 443 } else { 80 });
+    let port = parsed
+        .port()
+        .unwrap_or(if parsed.scheme() == "https" { 443 } else { 80 });
     let host_port = format!("{host}:{port}");
     if let Ok(addrs) = tokio::net::lookup_host(&host_port).await {
         for addr in addrs {
             let ip = addr.ip();
             if is_private_ip(&ip) {
-                return Err(format!(
-                    "URL resolves to private IP {ip} — possible SSRF"
-                ));
+                return Err(format!("URL resolves to private IP {ip} — possible SSRF"));
             }
         }
     }
@@ -166,7 +172,8 @@ fn is_private_ip(ip: &IpAddr) -> bool {
                 || v4.is_link_local()                // 169.254.0.0/16
                 || v4.is_broadcast()                 // 255.255.255.255
                 || v4.is_unspecified()               // 0.0.0.0
-                || v4.octets()[0] == 100 && v4.octets()[1] >= 64 && v4.octets()[1] <= 127  // 100.64.0.0/10 (CGNAT)
+                || v4.octets()[0] == 100 && v4.octets()[1] >= 64 && v4.octets()[1] <= 127
+            // 100.64.0.0/10 (CGNAT)
         }
         IpAddr::V6(v6) => {
             v6.is_loopback()       // ::1

@@ -24,7 +24,10 @@ pub fn api_routes() -> Router<AppState> {
         .route("/api/conversations", post(create_conversation))
         .route("/api/conversations", get(list_conversations))
         .route("/api/conversations/{id}", get(get_conversation))
-        .route("/api/conversations/{id}", axum::routing::delete(delete_conversation))
+        .route(
+            "/api/conversations/{id}",
+            axum::routing::delete(delete_conversation),
+        )
         .route("/api/conversations/{id}/messages", post(send_message))
         .route(
             "/api/conversations/{id}/messages/stream",
@@ -64,9 +67,7 @@ async fn create_conversation(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
 }
 
-async fn list_conversations(
-    State(state): State<AppState>,
-) -> Result<Json<Vec<Uuid>>, StatusCode> {
+async fn list_conversations(State(state): State<AppState>) -> Result<Json<Vec<Uuid>>, StatusCode> {
     state
         .store
         .conversations()
@@ -130,8 +131,7 @@ async fn send_message(
     conv.updated_at = Utc::now();
 
     // Run the full agent pipeline.
-    let assistant_msg =
-        crate::orchestrate::run_agent(&state, &mut conv, &user_content).await?;
+    let assistant_msg = crate::orchestrate::run_agent(&state, &mut conv, &user_content).await?;
 
     // Persist the full conversation (including intermediate tool call messages).
     conv.updated_at = Utc::now();
@@ -275,22 +275,23 @@ async fn send_message_stream(
                 AgentEvent::TextDelta(delta) => Event::default()
                     .event("delta")
                     .data(serde_json::json!({"type": "delta", "delta": delta}).to_string()),
-                AgentEvent::ToolCallStart { tool_name, .. } => Event::default()
-                    .event("tool_start")
-                    .data(
+                AgentEvent::ToolCallStart { tool_name, .. } => {
+                    Event::default().event("tool_start").data(
                         serde_json::json!({"type": "tool_start", "delta": tool_name}).to_string(),
-                    ),
+                    )
+                }
                 AgentEvent::ToolCallEnd {
-                    tool_name, success, error_message, ..
+                    tool_name,
+                    success,
+                    error_message,
+                    ..
                 } => {
                     let t = if success { "tool_end" } else { "tool_error" };
                     let mut payload = serde_json::json!({"type": t, "delta": tool_name});
                     if let Some(ref err) = error_message {
                         payload["error"] = serde_json::json!(err);
                     }
-                    Event::default()
-                        .event(t)
-                        .data(payload.to_string())
+                    Event::default().event(t).data(payload.to_string())
                 }
                 AgentEvent::Reflecting => Event::default().event("thinking").data(
                     serde_json::json!({"type": "thinking", "delta": "reflecting on errors"})
@@ -304,15 +305,14 @@ async fn send_message_stream(
                     .event("done")
                     .data(serde_json::json!({"type": "done"}).to_string()),
             },
-            SsePayload::Done(Ok(message)) => Event::default().event("done").data(
-                serde_json::json!({"type": "done", "message": message}).to_string(),
-            ),
+            SsePayload::Done(Ok(message)) => Event::default()
+                .event("done")
+                .data(serde_json::json!({"type": "done", "message": message}).to_string()),
             SsePayload::Done(Err(e)) => {
                 tracing::error!(error = %e, "agent stream ended with error");
-                Event::default().event("error").data(
-                    serde_json::json!({"type": "error", "delta": format!("{e}")})
-                        .to_string(),
-                )
+                Event::default()
+                    .event("error")
+                    .data(serde_json::json!({"type": "error", "delta": format!("{e}")}).to_string())
             }
         };
         Ok(event)

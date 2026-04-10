@@ -117,11 +117,8 @@ impl MemorySystem {
             Arc::clone(&bm25_index),
         );
 
-        let lifecycle = LifecycleManager::new(
-            Arc::clone(&storage),
-            Arc::clone(&embedder),
-            config.clone(),
-        );
+        let lifecycle =
+            LifecycleManager::new(Arc::clone(&storage), Arc::clone(&embedder), config.clone());
 
         Self {
             writer,
@@ -172,10 +169,7 @@ impl MemorySystem {
     }
 
     /// Detect near-duplicate memories and create similarity links.
-    pub async fn detect_near_duplicates(
-        &self,
-        agent_id: Uuid,
-    ) -> rustykrab_core::Result<u32> {
+    pub async fn detect_near_duplicates(&self, agent_id: Uuid) -> rustykrab_core::Result<u32> {
         self.lifecycle.detect_near_duplicates(agent_id).await
     }
 
@@ -217,10 +211,7 @@ impl MemorySystem {
     }
 
     /// Rebuild the BM25 index from persisted memories (call on startup).
-    pub async fn rebuild_indexes(
-        &self,
-        agent_id: Uuid,
-    ) -> rustykrab_core::Result<usize> {
+    pub async fn rebuild_indexes(&self, agent_id: Uuid) -> rustykrab_core::Result<usize> {
         self.writer.rebuild_bm25_index(agent_id).await
     }
 }

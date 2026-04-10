@@ -1,8 +1,8 @@
 use aes_gcm::aead::Aead;
 use aes_gcm::{Aes256Gcm, KeyInit, Nonce};
 use argon2::Argon2;
-use rustykrab_core::Error;
 use rand::RngCore;
+use rustykrab_core::Error;
 use std::sync::Arc;
 use zeroize::Zeroizing;
 
@@ -34,7 +34,10 @@ pub struct SecretStore {
 
 impl SecretStore {
     pub(crate) fn new(tree: sled::Tree, master_key: Zeroizing<Vec<u8>>) -> Self {
-        Self { tree, master_key: Arc::new(master_key) }
+        Self {
+            tree,
+            master_key: Arc::new(master_key),
+        }
     }
 
     /// Store a secret value under the given name.
@@ -74,8 +77,8 @@ impl SecretStore {
         let mut names = Vec::new();
         for entry in self.tree.iter() {
             let (key, _) = entry.map_err(|e| Error::Storage(e.to_string()))?;
-            let name = String::from_utf8(key.to_vec())
-                .map_err(|e| Error::Storage(e.to_string()))?;
+            let name =
+                String::from_utf8(key.to_vec()).map_err(|e| Error::Storage(e.to_string()))?;
             names.push(name);
         }
         Ok(names)
@@ -87,10 +90,15 @@ impl SecretStore {
     /// are safe for use as HMAC/AAD inputs.
     fn validate_name(name: &str) -> Result<(), Error> {
         if name.is_empty() || name.len() > 256 {
-            return Err(Error::Storage("secret name must be 1-256 characters".into()));
+            return Err(Error::Storage(
+                "secret name must be 1-256 characters".into(),
+            ));
         }
         // Allow alphanumeric, underscore, hyphen, and dot
-        if !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == '.') {
+        if !name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == '.')
+        {
             return Err(Error::Storage(
                 "secret name must contain only alphanumeric characters, underscores, hyphens, and dots".into(),
             ));
@@ -119,10 +127,13 @@ impl SecretStore {
 
         // Encrypt with the secret name as AAD.
         let ciphertext = cipher
-            .encrypt(nonce, aes_gcm::aead::Payload {
-                msg: data,
-                aad: key_name.as_bytes(),
-            })
+            .encrypt(
+                nonce,
+                aes_gcm::aead::Payload {
+                    msg: data,
+                    aad: key_name.as_bytes(),
+                },
+            )
             .map_err(|e| Error::Storage(format!("encryption failed: {e}")))?;
 
         // Pack: salt || nonce || ciphertext+tag
@@ -150,13 +161,18 @@ impl SecretStore {
         let nonce = Nonce::from_slice(nonce_bytes);
 
         cipher
-            .decrypt(nonce, aes_gcm::aead::Payload {
-                msg: ciphertext,
-                aad: key_name.as_bytes(),
+            .decrypt(
+                nonce,
+                aes_gcm::aead::Payload {
+                    msg: ciphertext,
+                    aad: key_name.as_bytes(),
+                },
+            )
+            .map_err(|e| {
+                Error::Storage(format!(
+                    "decryption failed (wrong key or tampered data): {e}"
+                ))
             })
-            .map_err(|e| Error::Storage(format!(
-                "decryption failed (wrong key or tampered data): {e}"
-            )))
     }
 
     /// Derive a 256-bit encryption key from the master key + salt using Argon2id.

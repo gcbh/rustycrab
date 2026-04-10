@@ -59,7 +59,8 @@ async fn build_and_inject_system_prompt(
     if !keywords.is_empty() {
         match state.store.memories().recall(conv.id, &keywords) {
             Ok(memories) if !memories.is_empty() => {
-                let mut recall_text = String::from("RECALLED MEMORIES (relevant to this message):\n");
+                let mut recall_text =
+                    String::from("RECALLED MEMORIES (relevant to this message):\n");
                 for mem in memories.iter().take(10) {
                     recall_text.push_str(&format!("- [{}] {}\n", mem.id, mem.fact));
                 }
@@ -276,15 +277,15 @@ pub async fn run_agent_streaming(
         keepalive.abort(); // stop the heartbeat once pipeline finishes
 
         let result = result.map_err(|e| {
-                tracing::error!("orchestration pipeline error: {e}");
-                on_event(AgentEvent::ToolCallEnd {
-                    tool_name: "orchestration_pipeline".to_string(),
-                    call_id: "pipeline".to_string(),
-                    success: false,
-                    error_message: Some(e.to_string()),
-                });
-                StatusCode::INTERNAL_SERVER_ERROR
-            })?;
+            tracing::error!("orchestration pipeline error: {e}");
+            on_event(AgentEvent::ToolCallEnd {
+                tool_name: "orchestration_pipeline".to_string(),
+                call_id: "pipeline".to_string(),
+                success: false,
+                error_message: Some(e.to_string()),
+            });
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
 
         on_event(AgentEvent::ToolCallEnd {
             tool_name: "orchestration_pipeline".to_string(),

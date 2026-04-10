@@ -88,11 +88,10 @@ impl Tool for GatewayTool {
                 let value = args["value"].as_str();
 
                 if let (Some(k), Some(v)) = (key, value) {
-                    let result = self
-                        .backend
-                        .set_config(k, v)
-                        .await
-                        .map_err(|e| rustykrab_core::Error::ToolExecution(e.to_string().into()))?;
+                    let result =
+                        self.backend.set_config(k, v).await.map_err(|e| {
+                            rustykrab_core::Error::ToolExecution(e.to_string().into())
+                        })?;
 
                     Ok(json!({
                         "action": "config",
@@ -100,11 +99,10 @@ impl Tool for GatewayTool {
                         "result": result,
                     }))
                 } else {
-                    let config = self
-                        .backend
-                        .get_config(key)
-                        .await
-                        .map_err(|e| rustykrab_core::Error::ToolExecution(e.to_string().into()))?;
+                    let config =
+                        self.backend.get_config(key).await.map_err(|e| {
+                            rustykrab_core::Error::ToolExecution(e.to_string().into())
+                        })?;
 
                     Ok(json!({
                         "action": "config",

@@ -56,8 +56,7 @@ impl ConversationStore {
         let mut ids = Vec::new();
         for entry in self.tree.iter() {
             let (key, _) = entry.map_err(|e| Error::Storage(e.to_string()))?;
-            let id =
-                Uuid::from_slice(&key).map_err(|e| Error::Storage(e.to_string()))?;
+            let id = Uuid::from_slice(&key).map_err(|e| Error::Storage(e.to_string()))?;
             ids.push(id);
         }
         Ok(ids)
