@@ -1,29 +1,25 @@
 mod conversation;
 pub mod keychain;
-pub mod memory;
 mod secret;
 
 use std::path::Path;
+use std::sync::Arc;
 
 use rustykrab_core::Error;
+use tokio::sync::Mutex;
 use zeroize::Zeroizing;
 
 pub use conversation::ConversationStore;
-pub use memory::{MemoryEntry, MemoryStore};
 pub use secret::SecretStore;
 
-/// Top-level database handle wrapping a sled instance.
+/// Top-level database handle wrapping a SQLite connection.
 ///
 /// The master key is wrapped in `Zeroizing` so it is securely erased
 /// from memory when the Store is dropped.
 #[derive(Clone)]
 pub struct Store {
-    db: sled::Db,
+    conn: Arc<Mutex<rusqlite::Connection>>,
     master_key: Zeroizing<Vec<u8>>,
-    // Pre-opened trees to avoid panics on every accessor call
-    conversations_tree: sled::Tree,
-    secrets_tree: sled::Tree,
-    memories_tree: sled::Tree,
 }
 
 impl Store {
@@ -33,43 +29,60 @@ impl Store {
     /// sourced from the OS keychain or an environment variable — never
     /// stored alongside the database.
     pub fn open(path: impl AsRef<Path>, master_key: Vec<u8>) -> Result<Self, Error> {
-        let db = sled::open(path).map_err(|e| Error::Storage(e.to_string()))?;
-        let conversations_tree = db
-            .open_tree("conversations")
-            .map_err(|e| Error::Storage(e.to_string()))?;
-        let secrets_tree = db
-            .open_tree("secrets")
-            .map_err(|e| Error::Storage(e.to_string()))?;
-        let memories_tree = db
-            .open_tree("memories")
-            .map_err(|e| Error::Storage(e.to_string()))?;
+        let db_path = path.as_ref().join("store.db");
+        let conn =
+            rusqlite::Connection::open(&db_path).map_err(|e| Error::Storage(e.to_string()))?;
+
+        conn.execute_batch(
+            "PRAGMA journal_mode = WAL;
+             PRAGMA synchronous = NORMAL;
+             PRAGMA foreign_keys = ON;
+             PRAGMA busy_timeout = 5000;",
+        )
+        .map_err(|e| Error::Storage(e.to_string()))?;
+
+        Self::run_migrations(&conn)?;
+
         Ok(Self {
-            db,
+            conn: Arc::new(Mutex::new(conn)),
             master_key: Zeroizing::new(master_key),
-            conversations_tree,
-            secrets_tree,
-            memories_tree,
         })
+    }
+
+    fn run_migrations(conn: &rusqlite::Connection) -> Result<(), Error> {
+        conn.execute_batch(
+            "
+            CREATE TABLE IF NOT EXISTS conversations (
+                id   TEXT PRIMARY KEY,
+                data TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS secrets (
+                name TEXT PRIMARY KEY,
+                data BLOB NOT NULL
+            );
+            ",
+        )
+        .map_err(|e| Error::Storage(e.to_string()))?;
+        Ok(())
     }
 
     /// Return a handle for conversation operations.
     pub fn conversations(&self) -> ConversationStore {
-        ConversationStore::new(self.conversations_tree.clone())
+        ConversationStore::new(Arc::clone(&self.conn))
     }
 
     /// Return a handle for encrypted secret operations.
     pub fn secrets(&self) -> SecretStore {
-        SecretStore::new(self.secrets_tree.clone(), self.master_key.clone())
-    }
-
-    /// Return a handle for conversation memory/RAG operations.
-    pub fn memories(&self) -> MemoryStore {
-        MemoryStore::new(self.memories_tree.clone())
+        SecretStore::new(Arc::clone(&self.conn), self.master_key.clone())
     }
 
     /// Flush all pending writes to disk.
     pub fn flush(&self) -> Result<(), Error> {
-        self.db.flush().map_err(|e| Error::Storage(e.to_string()))?;
+        // WAL mode checkpoints automatically; explicit checkpoint for shutdown.
+        let conn = self.conn.blocking_lock();
+        conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE)")
+            .map_err(|e| Error::Storage(e.to_string()))?;
         Ok(())
     }
 }

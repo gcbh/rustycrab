@@ -41,9 +41,6 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tracing-appender = "0.2"
 
-# Storage
-sled = "0.34"
-
 # Embedding static assets
 rust-embed = "8"
 
