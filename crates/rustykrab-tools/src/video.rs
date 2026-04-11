@@ -56,10 +56,7 @@ pub trait VideoBackend: Send + Sync {
     ) -> std::result::Result<Value, String>;
 
     /// Lint a composition.
-    async fn lint(
-        &self,
-        project: &VideoProject,
-    ) -> std::result::Result<Value, String>;
+    async fn lint(&self, project: &VideoProject) -> std::result::Result<Value, String>;
 
     /// Render a project to video.
     async fn render(
@@ -71,10 +68,7 @@ pub trait VideoBackend: Send + Sync {
     ) -> std::result::Result<Value, String>;
 
     /// Get project info.
-    async fn project_info(
-        &self,
-        project: &VideoProject,
-    ) -> std::result::Result<Value, String>;
+    async fn project_info(&self, project: &VideoProject) -> std::result::Result<Value, String>;
 
     /// List projects.
     async fn list_projects(&self) -> std::result::Result<Vec<VideoProject>, String>;
@@ -143,10 +137,7 @@ impl VideoBackend for VideoChannelAdapter {
         self.channel.set_composition(project, html).await
     }
 
-    async fn lint(
-        &self,
-        project: &VideoProject,
-    ) -> std::result::Result<Value, String> {
+    async fn lint(&self, project: &VideoProject) -> std::result::Result<Value, String> {
         self.channel.lint(project).await
     }
 
@@ -170,10 +161,7 @@ impl VideoBackend for VideoChannelAdapter {
         }))
     }
 
-    async fn project_info(
-        &self,
-        project: &VideoProject,
-    ) -> std::result::Result<Value, String> {
+    async fn project_info(&self, project: &VideoProject) -> std::result::Result<Value, String> {
         self.channel.project_info(project).await
     }
 
@@ -430,22 +418,20 @@ impl Tool for VideoTool {
                 let project = self.get_project(project_id).await?;
 
                 let elem_val = &args["element"];
-                let element: CompositionElement =
-                    serde_json::from_value(elem_val.clone()).map_err(|e| {
-                        rustykrab_core::Error::ToolExecution(
-                            format!("invalid element: {e}").into(),
-                        )
+                let element: CompositionElement = serde_json::from_value(elem_val.clone())
+                    .map_err(|e| {
+                        rustykrab_core::Error::ToolExecution(format!("invalid element: {e}").into())
                     })?;
 
-                let result =
-                    self.backend
-                        .add_element(&project, &element)
-                        .await
-                        .map_err(|e| {
-                            rustykrab_core::Error::ToolExecution(
-                                format!("failed to add element: {e}").into(),
-                            )
-                        })?;
+                let result = self
+                    .backend
+                    .add_element(&project, &element)
+                    .await
+                    .map_err(|e| {
+                        rustykrab_core::Error::ToolExecution(
+                            format!("failed to add element: {e}").into(),
+                        )
+                    })?;
 
                 Ok(json!({
                     "action": "add_element",
@@ -463,9 +449,7 @@ impl Tool for VideoTool {
                 let project = self.get_project(project_id).await?;
 
                 let html = args["html"].as_str().ok_or_else(|| {
-                    rustykrab_core::Error::ToolExecution(
-                        "missing html for set_composition".into(),
-                    )
+                    rustykrab_core::Error::ToolExecution("missing html for set_composition".into())
                 })?;
 
                 let result = self
@@ -495,9 +479,7 @@ impl Tool for VideoTool {
                 let project = self.get_project(project_id).await?;
 
                 let result = self.backend.lint(&project).await.map_err(|e| {
-                    rustykrab_core::Error::ToolExecution(
-                        format!("lint failed: {e}").into(),
-                    )
+                    rustykrab_core::Error::ToolExecution(format!("lint failed: {e}").into())
                 })?;
 
                 Ok(json!({
@@ -523,9 +505,7 @@ impl Tool for VideoTool {
                     .render(&project, output_name, quality, format)
                     .await
                     .map_err(|e| {
-                        rustykrab_core::Error::ToolExecution(
-                            format!("render failed: {e}").into(),
-                        )
+                        rustykrab_core::Error::ToolExecution(format!("render failed: {e}").into())
                     })?;
 
                 Ok(json!({
@@ -601,15 +581,15 @@ impl Tool for VideoTool {
                     .map(|o| Value::Object(o.clone()))
                     .unwrap_or(json!({}));
 
-                let result =
-                    self.backend
-                        .call_mcp_tool(tool_name, arguments)
-                        .await
-                        .map_err(|e| {
-                            rustykrab_core::Error::ToolExecution(
-                                format!("MCP tool call failed: {e}").into(),
-                            )
-                        })?;
+                let result = self
+                    .backend
+                    .call_mcp_tool(tool_name, arguments)
+                    .await
+                    .map_err(|e| {
+                        rustykrab_core::Error::ToolExecution(
+                            format!("MCP tool call failed: {e}").into(),
+                        )
+                    })?;
 
                 Ok(json!({
                     "action": "mcp_call",

@@ -117,11 +117,7 @@ impl McpClient {
     /// `command` is the program to run (e.g. "npx"), `args` are its arguments
     /// (e.g. `["hyperframes", "mcp"]`), and `env` provides additional
     /// environment variables for the child process.
-    pub async fn spawn(
-        command: &str,
-        args: &[&str],
-        env: &[(&str, &str)],
-    ) -> Result<Self, String> {
+    pub async fn spawn(command: &str, args: &[&str], env: &[(&str, &str)]) -> Result<Self, String> {
         let mut cmd = Command::new(command);
         cmd.args(args)
             .stdin(std::process::Stdio::piped())
@@ -136,14 +132,8 @@ impl McpClient {
             .spawn()
             .map_err(|e| format!("failed to spawn MCP server `{command}`: {e}"))?;
 
-        let stdout = child
-            .stdout
-            .take()
-            .ok_or("MCP server has no stdout")?;
-        let stdin = child
-            .stdin
-            .take()
-            .ok_or("MCP server has no stdin")?;
+        let stdout = child.stdout.take().ok_or("MCP server has no stdout")?;
+        let stdin = child.stdin.take().ok_or("MCP server has no stdin")?;
 
         let pending: Arc<Mutex<PendingMap>> = Arc::new(Mutex::new(HashMap::new()));
 
@@ -185,10 +175,7 @@ impl McpClient {
                                     let mut map = pending_reader.lock().await;
                                     if let Some(tx) = map.remove(&id) {
                                         let result = if let Some(err) = resp.error {
-                                            Err(format!(
-                                                "MCP error {}: {}",
-                                                err.code, err.message
-                                            ))
+                                            Err(format!("MCP error {}: {}", err.code, err.message))
                                         } else {
                                             Ok(resp.result.unwrap_or(Value::Null))
                                         };
@@ -198,9 +185,7 @@ impl McpClient {
                                 // Notifications (no id) are logged but not dispatched.
                             }
                             Err(e) => {
-                                tracing::trace!(
-                                    "MCP non-JSON line (parse error: {e}): {line}"
-                                );
+                                tracing::trace!("MCP non-JSON line (parse error: {e}): {line}");
                             }
                         }
                     }
@@ -247,11 +232,7 @@ impl McpClient {
     }
 
     /// Send a JSON-RPC request and wait for the response.
-    pub async fn request(
-        &self,
-        method: &str,
-        params: Option<Value>,
-    ) -> Result<Value, String> {
+    pub async fn request(&self, method: &str, params: Option<Value>) -> Result<Value, String> {
         let id = self.next_id.fetch_add(1, Ordering::SeqCst);
 
         let req = JsonRpcRequest {
@@ -261,8 +242,8 @@ impl McpClient {
             params,
         };
 
-        let line = serde_json::to_string(&req)
-            .map_err(|e| format!("failed to serialize request: {e}"))?;
+        let line =
+            serde_json::to_string(&req).map_err(|e| format!("failed to serialize request: {e}"))?;
 
         let (tx, rx) = oneshot::channel();
         {
@@ -288,11 +269,7 @@ impl McpClient {
     }
 
     /// Send a JSON-RPC notification (no id, no response expected).
-    pub async fn notify(
-        &self,
-        method: &str,
-        params: Option<Value>,
-    ) -> Result<(), String> {
+    pub async fn notify(&self, method: &str, params: Option<Value>) -> Result<(), String> {
         let notification = serde_json::json!({
             "jsonrpc": "2.0",
             "method": method,
@@ -330,11 +307,7 @@ impl McpClient {
     }
 
     /// Call a tool on the MCP server.
-    pub async fn call_tool(
-        &self,
-        name: &str,
-        arguments: Value,
-    ) -> Result<McpToolResult, String> {
+    pub async fn call_tool(&self, name: &str, arguments: Value) -> Result<McpToolResult, String> {
         let params = serde_json::json!({
             "name": name,
             "arguments": arguments

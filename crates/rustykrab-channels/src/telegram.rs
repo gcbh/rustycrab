@@ -639,5 +639,4 @@ mod tests {
         assert_eq!(chunks.len(), 2);
         assert_eq!(chunks[0].len(), 4096);
     }
-
 }

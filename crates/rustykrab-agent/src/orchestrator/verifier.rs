@@ -196,17 +196,15 @@ impl ConsistencyVoter {
         // Estimate agreement by similarity check, filtering out common stop
         // words that inflate overlap scores (fixes ORCH-M3).
         const STOP_WORDS: &[&str] = &[
-            "the", "a", "an", "is", "are", "was", "were", "be", "been", "being",
-            "have", "has", "had", "do", "does", "did", "will", "would", "shall",
-            "should", "may", "might", "can", "could", "must", "to", "of", "in",
-            "for", "on", "with", "at", "by", "from", "as", "into", "through",
-            "during", "before", "after", "then", "once", "here", "there", "when",
-            "where", "why", "how", "all", "both", "each", "few", "more", "most",
-            "other", "some", "such", "no", "nor", "not", "only", "own", "same",
-            "so", "than", "too", "very", "and", "but", "or", "if", "it", "its",
-            "this", "that", "these", "those", "i", "me", "my", "we", "our", "you",
-            "your", "he", "him", "his", "she", "her", "they", "them", "their",
-            "what", "which", "who", "whom",
+            "the", "a", "an", "is", "are", "was", "were", "be", "been", "being", "have", "has",
+            "had", "do", "does", "did", "will", "would", "shall", "should", "may", "might", "can",
+            "could", "must", "to", "of", "in", "for", "on", "with", "at", "by", "from", "as",
+            "into", "through", "during", "before", "after", "then", "once", "here", "there",
+            "when", "where", "why", "how", "all", "both", "each", "few", "more", "most", "other",
+            "some", "such", "no", "nor", "not", "only", "own", "same", "so", "than", "too", "very",
+            "and", "but", "or", "if", "it", "its", "this", "that", "these", "those", "i", "me",
+            "my", "we", "our", "you", "your", "he", "him", "his", "she", "her", "they", "them",
+            "their", "what", "which", "who", "whom",
         ];
         let a_lower = answer.to_lowercase();
         let answer_words: std::collections::HashSet<&str> = a_lower
