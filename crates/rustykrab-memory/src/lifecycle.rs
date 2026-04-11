@@ -71,8 +71,10 @@ impl LifecycleManager {
         }
 
         if !working_promotions.is_empty() {
-            stats.promoted_to_episodic =
-                self.storage.batch_update_stages(&working_promotions).await?;
+            stats.promoted_to_episodic = self
+                .storage
+                .batch_update_stages(&working_promotions)
+                .await?;
         }
 
         // ── Promote: episodic → semantic ────────────────────────
