@@ -13,6 +13,7 @@
 //!      plus `PR_SET_NO_NEW_PRIVS` to prevent privilege escalation.
 
 use std::io;
+use std::path::Path;
 
 /// Apply POSIX resource limits to the current process.
 ///
