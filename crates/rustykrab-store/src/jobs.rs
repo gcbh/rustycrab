@@ -107,9 +107,7 @@ impl JobStore {
                     one_shot: row.get::<_, i32>(5)? != 0,
                     enabled: row.get::<_, i32>(6)? != 0,
                     next_run_at: parse_stored_timestamp(row.get::<_, String>(7)?),
-                    last_run_at: row
-                        .get::<_, Option<String>>(8)?
-                        .map(parse_stored_timestamp),
+                    last_run_at: row.get::<_, Option<String>>(8)?.map(parse_stored_timestamp),
                     created_at: parse_stored_timestamp(row.get::<_, String>(9)?),
                 })
             })
@@ -151,9 +149,7 @@ impl JobStore {
                     one_shot: row.get::<_, i32>(5)? != 0,
                     enabled: row.get::<_, i32>(6)? != 0,
                     next_run_at: parse_stored_timestamp(row.get::<_, String>(7)?),
-                    last_run_at: row
-                        .get::<_, Option<String>>(8)?
-                        .map(parse_stored_timestamp),
+                    last_run_at: row.get::<_, Option<String>>(8)?.map(parse_stored_timestamp),
                     created_at: parse_stored_timestamp(row.get::<_, String>(9)?),
                 })
             })
@@ -202,10 +198,7 @@ impl JobStore {
 }
 
 /// Parse a schedule string, returning `(is_one_shot, next_run_at)`.
-fn parse_schedule(
-    schedule: &str,
-    now: DateTime<Utc>,
-) -> Result<(bool, DateTime<Utc>), Error> {
+fn parse_schedule(schedule: &str, now: DateTime<Utc>) -> Result<(bool, DateTime<Utc>), Error> {
     // Try ISO 8601 timestamp first (one-shot).
     if let Ok(ts) = DateTime::parse_from_rfc3339(schedule) {
         let ts = ts.with_timezone(&Utc);
@@ -223,10 +216,7 @@ fn parse_schedule(
 }
 
 /// Compute the next occurrence of a cron expression after `after`.
-fn compute_next_cron_run(
-    expression: &str,
-    after: DateTime<Utc>,
-) -> Result<DateTime<Utc>, Error> {
+fn compute_next_cron_run(expression: &str, after: DateTime<Utc>) -> Result<DateTime<Utc>, Error> {
     let cron: Cron = expression
         .parse()
         .map_err(|e| Error::Config(format!("invalid cron expression: {e}")))?;

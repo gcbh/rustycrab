@@ -79,7 +79,10 @@ impl CronBackend for CronAdapter {
         channel: Option<&str>,
         chat_id: Option<&str>,
     ) -> rustykrab_core::Result<serde_json::Value> {
-        let job = self.store.jobs().create_job(schedule, task, channel, chat_id)?;
+        let job = self
+            .store
+            .jobs()
+            .create_job(schedule, task, channel, chat_id)?;
         Ok(serde_json::to_value(&job).expect("ScheduledJob is always serializable"))
     }
 
