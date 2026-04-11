@@ -2,6 +2,9 @@
 pub mod sanitize;
 pub mod security;
 
+// Sandboxed subprocess execution
+mod sandboxed_spawn;
+
 // Filesystem tools
 mod apply_patch;
 mod edit;
