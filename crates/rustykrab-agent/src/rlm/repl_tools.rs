@@ -229,11 +229,14 @@ impl Tool for ContextSearchTool {
         })?;
 
         let mut matches = Vec::new();
-        let mut byte_offset = 0usize;
         let mut total_count = 0usize;
+        // Track byte offset by pointer arithmetic against the original
+        // string so we handle both \n and \r\n correctly.
+        let ctx_start = self.context.as_ptr() as usize;
 
         for (line_num, line) in self.context.lines().enumerate() {
             if re.is_match(line) {
+                let byte_offset = line.as_ptr() as usize - ctx_start;
                 total_count += 1;
                 if matches.len() < max_results {
                     matches.push(json!({
@@ -247,8 +250,6 @@ impl Tool for ContextSearchTool {
                     }));
                 }
             }
-            // +1 for the newline character.
-            byte_offset += line.len() + 1;
         }
 
         Ok(json!({
@@ -451,5 +452,17 @@ mod tests {
         assert_eq!(result["returned_matches"], 2);
         assert_eq!(result["truncated"], true);
         assert_eq!(result["matches"].as_array().unwrap().len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_context_search_crlf_offsets() {
+        // \r\n line endings — byte offsets must account for 2-byte separators
+        let ctx = Arc::new("first\r\nsecond\r\nthird".to_string());
+        let tool = ContextSearchTool { context: ctx };
+        let result = tool.execute(json!({"pattern": "third"})).await.unwrap();
+        let matches = result["matches"].as_array().unwrap();
+        assert_eq!(matches.len(), 1);
+        // "first\r\n" = 7 bytes, "second\r\n" = 8 bytes → "third" starts at byte 15
+        assert_eq!(matches[0]["byte_offset"], 15);
     }
 }
