@@ -57,6 +57,7 @@ pub mod chunking;
 pub mod config;
 pub mod embedding;
 pub mod extraction;
+pub mod flusher;
 pub mod lifecycle;
 pub mod retrieval;
 pub mod scoring;
@@ -70,6 +71,7 @@ use uuid::Uuid;
 pub use config::MemoryConfig;
 
 use bm25::Bm25Index;
+use flusher::SessionFlusher;
 use lifecycle::{LifecycleManager, LifecycleSweepStats};
 use retrieval::MemoryRetriever;
 use storage::MemoryStorage;
@@ -81,13 +83,16 @@ mod writer;
 /// The main entry point for the memory system.
 ///
 /// Composes the write path ([MemoryWriter]), read path ([MemoryRetriever]),
-/// and lifecycle management ([LifecycleManager]) into a single facade.
+/// lifecycle management ([LifecycleManager]), and background session
+/// flushing ([SessionFlusher]) into a single facade.
 pub struct MemorySystem {
     writer: MemoryWriter,
     retriever: MemoryRetriever,
     lifecycle: LifecycleManager,
     storage: Arc<dyn MemoryStorage>,
     config: MemoryConfig,
+    /// Active session flusher, if a session has been started.
+    flusher: tokio::sync::Mutex<Option<SessionFlusher>>,
 }
 
 impl MemorySystem {
@@ -129,18 +134,29 @@ impl MemorySystem {
             lifecycle,
             storage,
             config,
+            flusher: tokio::sync::Mutex::new(None),
         }
     }
 
     // ── Write path ──────────────────────────────────────────────
 
     /// Retain a conversation turn in memory (dual-track write).
+    ///
+    /// Resets the idle flush timer so the background flusher knows
+    /// the session is still active.
     pub async fn retain(
         &self,
         turn: ConversationTurn,
         agent_id: Uuid,
     ) -> rustykrab_core::Result<Uuid> {
-        self.writer.retain(turn, agent_id).await
+        let id = self.writer.retain(turn, agent_id).await?;
+
+        // Signal activity to the background flusher.
+        if let Some(ref flusher) = *self.flusher.lock().await {
+            flusher.notify_activity();
+        }
+
+        Ok(id)
     }
 
     /// Access the writer directly (e.g., for `save_fact` or `rebuild_bm25_index`).
@@ -163,11 +179,54 @@ impl MemorySystem {
 
     // ── Session lifecycle ─────────────────────────────────────────
 
-    /// Flush working memory at session end.
+    /// Start a session for an agent.
     ///
-    /// Transitions all `Working` memories for the agent to `Episodic`,
-    /// where they become subject to decay, promotion, and demotion.
-    /// Call this when a conversation session ends.
+    /// Spawns a background flusher that:
+    /// 1. Flushes Working → Episodic after `idle_flush_timeout_secs` of inactivity.
+    /// 2. Force-flushes Working memories older than `max_working_age_secs`.
+    ///
+    /// Also flushes any stale Working memories from a previous session
+    /// that wasn't cleanly shut down.
+    pub async fn start_session(
+        &self,
+        agent_id: Uuid,
+    ) -> rustykrab_core::Result<()> {
+        // Safety net: flush any leftover Working memories from a prior session.
+        self.lifecycle.flush_session(agent_id).await?;
+
+        // Spawn the background flusher.
+        let flusher = SessionFlusher::spawn(
+            Arc::clone(&self.storage),
+            agent_id,
+            &self.config,
+        );
+        *self.flusher.lock().await = Some(flusher);
+
+        Ok(())
+    }
+
+    /// Stop the current session, flushing all remaining Working memories.
+    ///
+    /// Shuts down the background flusher (which does a final flush on
+    /// exit) and then does an explicit flush as a belt-and-suspenders
+    /// guarantee.
+    pub async fn stop_session(
+        &self,
+        agent_id: Uuid,
+    ) -> rustykrab_core::Result<u32> {
+        // Shut down the background flusher (triggers its final flush).
+        if let Some(flusher) = self.flusher.lock().await.take() {
+            flusher.shutdown();
+        }
+
+        // Explicit flush to ensure nothing is left behind.
+        self.lifecycle.flush_session(agent_id).await
+    }
+
+    /// Flush working memory immediately (manual trigger).
+    ///
+    /// Transitions all `Working` memories for the agent to `Episodic`
+    /// without stopping the background flusher.
     pub async fn flush_session(
         &self,
         agent_id: Uuid,

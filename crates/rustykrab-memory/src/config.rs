@@ -52,6 +52,15 @@ pub struct MemoryConfig {
     pub embedding_dimensions: usize,
     /// Model version string for provenance tracking.
     pub embedding_model_version: String,
+
+    // Session flushing
+    /// Seconds of inactivity before Working memories auto-flush to Episodic.
+    pub idle_flush_timeout_secs: u64,
+    /// Maximum age in seconds for Working memories before forced flush,
+    /// regardless of activity. Prevents unbounded growth during long sessions.
+    pub max_working_age_secs: u64,
+    /// How often the background flusher checks for idle/max-age (seconds).
+    pub flush_check_interval_secs: u64,
 }
 
 impl Default for MemoryConfig {
@@ -86,6 +95,11 @@ impl Default for MemoryConfig {
             // Embedding (Nomic-embed-text-v1.5 default)
             embedding_dimensions: 768,
             embedding_model_version: "nomic-embed-text-v1.5".to_string(),
+
+            // Session flushing
+            idle_flush_timeout_secs: 300,     // 5 minutes idle → flush
+            max_working_age_secs: 1800,       // 30 minutes max → force flush
+            flush_check_interval_secs: 30,    // check every 30 seconds
         }
     }
 }

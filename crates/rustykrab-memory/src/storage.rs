@@ -108,6 +108,15 @@ pub trait MemoryStorage: Send + Sync {
     /// Called at session end to flush working memory into long-term storage.
     /// Returns the number of memories transitioned.
     async fn flush_working_to_episodic(&self, agent_id: Uuid) -> Result<u32>;
+
+    /// Transition Working memories older than `max_age_secs` to Episodic.
+    /// This is the force-flush backstop for long-running sessions.
+    /// Returns the number of memories transitioned.
+    async fn flush_working_older_than(
+        &self,
+        agent_id: Uuid,
+        max_age_secs: u64,
+    ) -> Result<u32>;
 }
 
 // ── SQLite helpers ──────────────────────────────────────────────
@@ -1009,6 +1018,27 @@ impl MemoryStorage for SqliteMemoryStorage {
                     "UPDATE memories SET lifecycle_stage = 'episodic'
                      WHERE agent_id = ?1 AND lifecycle_stage = 'working' AND is_valid = 1",
                     params![agent_str],
+                )
+                .map_err(storage_err)?;
+            Ok(affected as u32)
+        })
+        .await
+    }
+
+    async fn flush_working_older_than(
+        &self,
+        agent_id: Uuid,
+        max_age_secs: u64,
+    ) -> Result<u32> {
+        let agent_str = agent_id.to_string();
+        let cutoff = (Utc::now() - chrono::Duration::seconds(max_age_secs as i64)).to_rfc3339();
+        self.with_conn(move |conn| {
+            let affected = conn
+                .execute(
+                    "UPDATE memories SET lifecycle_stage = 'episodic'
+                     WHERE agent_id = ?1 AND lifecycle_stage = 'working'
+                       AND is_valid = 1 AND created_at <= ?2",
+                    params![agent_str, cutoff],
                 )
                 .map_err(storage_err)?;
             Ok(affected as u32)
