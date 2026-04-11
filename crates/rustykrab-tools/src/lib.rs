@@ -73,6 +73,9 @@ mod gmail;
 // Notion integration
 mod notion;
 
+// Obsidian integration
+pub(crate) mod obsidian;
+
 // Credentials (from main)
 mod credential_read;
 mod credential_write;
@@ -150,6 +153,9 @@ pub use gmail::GmailTool;
 // Notion
 pub use notion::NotionTool;
 
+// Obsidian
+pub use obsidian::ObsidianTool;
+
 // Credentials
 pub use credential_read::CredentialReadTool;
 pub use credential_write::CredentialWriteTool;
@@ -195,6 +201,8 @@ pub fn builtin_tools(
         std::sync::Arc::new(GmailTool::new(secrets.clone())),
         // Notion
         std::sync::Arc::new(NotionTool::new(secrets.clone())),
+        // Obsidian
+        std::sync::Arc::new(ObsidianTool::new(secrets.clone())),
         // Credentials
         std::sync::Arc::new(CredentialReadTool::new(secrets.clone())),
         std::sync::Arc::new(CredentialWriteTool::new(secrets)),
