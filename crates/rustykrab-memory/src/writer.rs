@@ -8,7 +8,7 @@ use uuid::Uuid;
 use crate::bm25::Bm25Index;
 use crate::chunking::chunk_text;
 use crate::config::MemoryConfig;
-use crate::embedding::Embedder;
+use crate::embedding::{cosine_similarity, Embedder};
 use crate::extraction::RegexExtractor;
 use crate::scoring::compute_importance;
 use crate::storage::MemoryStorage;
@@ -16,11 +16,16 @@ use crate::types::{ConversationTurn, ImportanceSource, LifecycleStage, Memory, M
 
 /// Dual-track memory writer.
 ///
-/// Track 1 (synchronous): Store verbatim content, chunk, embed, and index.
-/// Track 2 (asynchronous): Extract facts/entities in the background.
+/// Track 1 (synchronous): Store verbatim content as Working memory, chunk,
+/// embed, and index.
+/// Track 2 (asynchronous): Extract facts/entities and detect near-duplicates
+/// in the background.
 ///
-/// The write path never blocks on extraction — raw verbatim storage is
-/// always the synchronous, reliable path.
+/// New memories start in the `Working` lifecycle stage and are promoted to
+/// `Episodic` when the session is finalized via [`LifecycleManager::finalize_session`].
+///
+/// The write path never blocks on extraction or dedup — raw verbatim storage
+/// is always the synchronous, reliable path.
 pub struct MemoryWriter {
     storage: Arc<dyn MemoryStorage>,
     embedder: Arc<dyn Embedder>,
@@ -47,11 +52,11 @@ impl MemoryWriter {
     /// Retain a conversation turn in memory.
     ///
     /// 1. Dedup check via SHA-256 content hash.
-    /// 2. Store verbatim memory record (sync).
+    /// 2. Store verbatim memory record as `Working` (sync).
     /// 3. Chunk, embed, and store chunk embeddings (sync).
     /// 4. Index in BM25 (sync).
     /// 5. Compute heuristic importance (sync).
-    /// 6. Spawn background extraction (async, never blocks).
+    /// 6. Spawn background extraction + near-duplicate detection (async, never blocks).
     ///
     /// Returns the memory ID.
     pub async fn retain(
@@ -87,7 +92,7 @@ impl MemoryWriter {
             agent_id,
             content: turn.content.clone(),
             content_hash,
-            lifecycle_stage: LifecycleStage::Episodic,
+            lifecycle_stage: LifecycleStage::Working,
             importance,
             importance_source: ImportanceSource::Heuristic,
             decay_rate: self.config.default_decay_rate,
@@ -149,14 +154,49 @@ impl MemoryWriter {
             index.index_document(memory_id, agent_id, &turn.content);
         }
 
-        // ── Track 2: Async background extraction ────────────────
+        // ── Track 2: Async background extraction + near-duplicate check ──
         let storage = Arc::clone(&self.storage);
         let content = turn.content.clone();
+        let dedup_threshold = self.config.dedup_auto_merge_threshold as f32;
         tokio::spawn(async move {
+            // Step 1: Extract facts.
             let facts = RegexExtractor::extract(&content, memory_id);
             if !facts.is_empty() {
                 if let Err(e) = storage.store_facts(&facts).await {
                     warn!(memory_id = %memory_id, error = %e, "background extraction failed");
+                }
+            }
+
+            // Step 2: Near-duplicate detection against existing memories.
+            // Fetch this memory's first chunk embedding (stored by the sync path above).
+            let new_emb = match storage.get_chunks_for_memory(memory_id).await {
+                Ok(chunks) => match chunks.into_iter().next() {
+                    Some(c) if !c.embedding.is_empty() => c.embedding,
+                    _ => return,
+                },
+                Err(_) => return,
+            };
+
+            let all_embeddings = match storage.get_all_chunk_embeddings(agent_id).await {
+                Ok(e) => e,
+                Err(_) => return,
+            };
+
+            for (existing_id, existing_emb) in &all_embeddings {
+                if *existing_id == memory_id {
+                    continue;
+                }
+                let sim = cosine_similarity(&new_emb, existing_emb);
+                if sim >= dedup_threshold {
+                    debug!(
+                        new_id = %memory_id,
+                        existing_id = %existing_id,
+                        similarity = %sim,
+                        "near-duplicate detected, invalidating new memory"
+                    );
+                    let _ = storage.invalidate(memory_id, Some(*existing_id)).await;
+                    let _ = storage.record_access(*existing_id).await;
+                    return;
                 }
             }
         });

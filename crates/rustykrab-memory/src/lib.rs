@@ -168,6 +168,18 @@ impl MemorySystem {
         self.lifecycle.sweep(agent_id).await
     }
 
+    /// Finalize a session: promote all Working memories for this session
+    /// to Episodic.
+    ///
+    /// Call this when a conversation/session ends.
+    pub async fn finalize_session(
+        &self,
+        agent_id: Uuid,
+        session_id: Uuid,
+    ) -> rustykrab_core::Result<u32> {
+        self.lifecycle.finalize_session(agent_id, session_id).await
+    }
+
     /// Detect near-duplicate memories and create similarity links.
     pub async fn detect_near_duplicates(&self, agent_id: Uuid) -> rustykrab_core::Result<u32> {
         self.lifecycle.detect_near_duplicates(agent_id).await

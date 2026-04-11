@@ -181,6 +181,31 @@ async fn main() -> anyhow::Result<()> {
     });
     tracing::info!(%agent_id, "memory system initialized");
 
+    // --- Idle lifecycle sweep ---
+    // Runs a lifecycle sweep when there is no activity for N minutes.
+    // Resets the idle timer on each inbound request (signaled via Notify).
+    let activity_signal = Arc::new(tokio::sync::Notify::new());
+    let idle_sweep_handle = {
+        let system = Arc::clone(&memory_system);
+        let activity = Arc::clone(&activity_signal);
+        let idle_secs = memory_system.config().sweep_idle_trigger_minutes as u64 * 60;
+        tokio::spawn(async move {
+            loop {
+                let idle = tokio::time::sleep(std::time::Duration::from_secs(idle_secs));
+                tokio::select! {
+                    _ = idle => {
+                        if let Err(e) = system.lifecycle_sweep(agent_id).await {
+                            tracing::warn!(error = %e, "idle lifecycle sweep failed");
+                        }
+                    }
+                    _ = activity.notified() => {
+                        continue;
+                    }
+                }
+            }
+        })
+    };
+
     // --- Video channel (optional, enabled via RUSTYKRAB_VIDEO=true) ---
     let video_enabled = std::env::var("RUSTYKRAB_VIDEO")
         .map(|v| v == "true" || v == "1")
@@ -441,6 +466,16 @@ async fn main() -> anyhow::Result<()> {
                 tracing::error!("infrastructure task panicked during shutdown: {e}");
             }
         }
+    }
+
+    // Finalize memory session: Working → Episodic + lifecycle sweep.
+    idle_sweep_handle.abort();
+    tracing::info!("finalizing memory session...");
+    if let Err(e) = memory_system.finalize_session(agent_id, session_id).await {
+        tracing::warn!(error = %e, "failed to finalize memory session");
+    }
+    if let Err(e) = memory_system.lifecycle_sweep(agent_id).await {
+        tracing::warn!(error = %e, "shutdown lifecycle sweep failed");
     }
 
     // Shut down video channel (MCP server).

@@ -47,6 +47,11 @@ pub struct MemoryConfig {
     pub tombstone_idle_days: u32,
     /// Importance threshold below which archival memories get tombstoned.
     pub tombstone_importance_threshold: f64,
+    /// Maximum idle minutes before the lifecycle sweep auto-promotes
+    /// Working memories to Episodic (safety net for crashed sessions).
+    pub working_max_idle_minutes: u32,
+    /// Minutes of inactivity before triggering an idle lifecycle sweep.
+    pub sweep_idle_trigger_minutes: u32,
 
     // Deduplication
     /// Cosine similarity threshold for auto-merge (≥0.95).
@@ -105,6 +110,8 @@ impl Default for MemoryConfig {
             promote_min_age_days: 7,
             tombstone_idle_days: 180,
             tombstone_importance_threshold: 0.3,
+            working_max_idle_minutes: 60,
+            sweep_idle_trigger_minutes: 5,
 
             // Dedup
             dedup_auto_merge_threshold: 0.95,
