@@ -71,9 +71,7 @@ impl SecretStore {
         let encrypted: Vec<u8> = stmt
             .query_row(params![name], |row| row.get(0))
             .map_err(|e| match e {
-                rusqlite::Error::QueryReturnedNoRows => {
-                    Error::NotFound(format!("secret '{name}'"))
-                }
+                rusqlite::Error::QueryReturnedNoRows => Error::NotFound(format!("secret '{name}'")),
                 other => Error::Storage(other.to_string()),
             })?;
         let plaintext = self.decrypt(name, &encrypted)?;

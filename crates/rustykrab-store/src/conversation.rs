@@ -78,8 +78,7 @@ impl ConversationStore {
         let mut ids = Vec::new();
         for row in rows {
             let id_str = row.map_err(|e| Error::Storage(e.to_string()))?;
-            let id =
-                Uuid::parse_str(&id_str).map_err(|e| Error::Storage(e.to_string()))?;
+            let id = Uuid::parse_str(&id_str).map_err(|e| Error::Storage(e.to_string()))?;
             ids.push(id);
         }
         Ok(ids)

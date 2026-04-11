@@ -9,23 +9,18 @@ use uuid::Uuid;
 /// - `User` — all memories for this user across sessions (default)
 /// - `Agent` — all memories for this agent identity
 /// - `Global` — shared across all agents and users
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MemoryScope {
     /// Current conversation only.
     Session,
     /// All conversations for this user (default for retrieval).
+    #[default]
     User,
     /// Per-agent identity.
     Agent,
     /// Shared across all agents.
     Global,
-}
-
-impl Default for MemoryScope {
-    fn default() -> Self {
-        Self::User
-    }
 }
 
 /// Lifecycle stage for memory promotion/demotion.

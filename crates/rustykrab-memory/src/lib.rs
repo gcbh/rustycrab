@@ -111,17 +111,10 @@ impl MemorySystem {
         storage: Arc<dyn MemoryStorage>,
         embedder: Arc<dyn embedding::Embedder>,
     ) -> Self {
-        let writer = MemoryWriter::new(
-            Arc::clone(&storage),
-            Arc::clone(&embedder),
-            config.clone(),
-        );
+        let writer = MemoryWriter::new(Arc::clone(&storage), Arc::clone(&embedder), config.clone());
 
-        let retriever = MemoryRetriever::new(
-            Arc::clone(&storage),
-            Arc::clone(&embedder),
-            config.clone(),
-        );
+        let retriever =
+            MemoryRetriever::new(Arc::clone(&storage), Arc::clone(&embedder), config.clone());
 
         let lifecycle =
             LifecycleManager::new(Arc::clone(&storage), Arc::clone(&embedder), config.clone());

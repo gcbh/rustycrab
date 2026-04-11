@@ -24,11 +24,7 @@ pub struct HybridMemoryBackend {
 }
 
 impl HybridMemoryBackend {
-    pub fn new(
-        system: Arc<MemorySystem>,
-        agent_id: Uuid,
-        session_id: Uuid,
-    ) -> Self {
+    pub fn new(system: Arc<MemorySystem>, agent_id: Uuid, session_id: Uuid) -> Self {
         Self {
             system,
             agent_id,

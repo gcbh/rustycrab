@@ -94,14 +94,6 @@ impl Default for AgentConfig {
     }
 }
 
-/// Runs the agent loop: send conversation to model, execute tool calls, repeat.
-///
-/// Improvements over a basic loop:
-/// - **Multi-tool**: executes multiple tool calls in parallel when the model
-///   requests them (e.g. Anthropic's parallel tool use)
-/// - **Retry with reflection**: on tool errors, feeds the error back to the
-///   model so it can self-correct rather than blindly retrying
-/// - **Memory**: summarizes older messages to keep context within limits
 /// Callback invoked with each message added to the conversation.
 /// Used for auto-persisting turns to memory.
 pub type OnMessageCallback = Arc<dyn Fn(&Message) + Send + Sync>;
@@ -110,6 +102,14 @@ pub type OnMessageCallback = Arc<dyn Fn(&Message) + Send + Sync>;
 /// Used for archival preservation before truncation.
 pub type OnTruncateCallback = Arc<dyn Fn(Vec<Message>) + Send + Sync>;
 
+/// Runs the agent loop: send conversation to model, execute tool calls, repeat.
+///
+/// Improvements over a basic loop:
+/// - **Multi-tool**: executes multiple tool calls in parallel when the model
+///   requests them (e.g. Anthropic's parallel tool use)
+/// - **Retry with reflection**: on tool errors, feeds the error back to the
+///   model so it can self-correct rather than blindly retrying
+/// - **Memory**: summarizes older messages to keep context within limits
 pub struct AgentRunner {
     provider: Arc<dyn ModelProvider>,
     tools: Vec<Arc<dyn Tool>>,

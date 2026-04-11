@@ -2,13 +2,13 @@ use axum::http::StatusCode;
 use chrono::Utc;
 use uuid::Uuid;
 
+use crate::AppState;
 use rustykrab_agent::{AgentEvent, AgentRunner};
 use rustykrab_core::capability::CapabilitySet;
 use rustykrab_core::orchestration::TaskComplexity;
 use rustykrab_core::session::Session;
 use rustykrab_core::types::{Conversation, Message, MessageContent, Role};
 use rustykrab_skills::SystemPromptBuilder;
-use crate::AppState;
 
 /// Build the system prompt and inject it as the first message in the conversation.
 ///
