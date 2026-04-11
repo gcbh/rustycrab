@@ -315,12 +315,35 @@ impl NotionTool {
             }
         }
 
-        Ok(json!({
+        let mut result = json!({
             "id": page_id,
             "url": url,
             "title": title,
             "message": format!("Page '{}' created successfully.", title),
-        }))
+        });
+
+        // Sync to Obsidian if configured.
+        let markdown_content = args.get("children").and_then(|c| c.as_str());
+        match crate::obsidian::try_sync_to_obsidian(
+            &self.secrets,
+            title,
+            markdown_content,
+            Some(page_id),
+            Some(url),
+        )
+        .await
+        {
+            Ok(Some(sync)) => {
+                result["obsidian_sync"] = sync;
+            }
+            Ok(None) => {} // Obsidian not configured.
+            Err(e) => {
+                tracing::warn!("Obsidian sync failed for '{}': {}", title, e);
+                result["obsidian_sync_error"] = json!(e);
+            }
+        }
+
+        Ok(result)
     }
 
     // -----------------------------------------------------------------------
@@ -345,11 +368,47 @@ impl NotionTool {
 
         self.append_blocks_batched(page_id, &blocks).await?;
 
-        Ok(json!({
+        let mut result = json!({
             "page_id": page_id,
             "blocks_added": blocks.len(),
             "message": format!("Appended {} block(s) to page.", blocks.len()),
-        }))
+        });
+
+        // Sync append to Obsidian if content was provided as markdown.
+        if let Some(markdown) = args["content"].as_str() {
+            if self.secrets.get("obsidian_api_key").is_ok() {
+                // Look up the page title to derive the Obsidian vault path.
+                let title =
+                    match self.notion_request(reqwest::Method::GET, &format!("/pages/{page_id}")) {
+                        Ok(req) => match self.send_and_parse(req).await {
+                            Ok(page) => extract_title(&page),
+                            Err(_) => String::new(),
+                        },
+                        Err(_) => String::new(),
+                    };
+
+                if !title.is_empty() {
+                    match crate::obsidian::try_sync_append_to_obsidian(
+                        &self.secrets,
+                        &title,
+                        markdown,
+                    )
+                    .await
+                    {
+                        Ok(Some(sync)) => {
+                            result["obsidian_sync"] = sync;
+                        }
+                        Ok(None) => {}
+                        Err(e) => {
+                            tracing::warn!("Obsidian sync failed for append to '{}': {}", title, e);
+                            result["obsidian_sync_error"] = json!(e);
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(result)
     }
 
     // -----------------------------------------------------------------------
