@@ -214,66 +214,6 @@ impl RecursiveCall {
     }
 }
 
-/// An entity in the knowledge graph.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct KnowledgeEntity {
-    /// Unique entity ID.
-    pub id: Uuid,
-    /// Entity type (person, project, event, preference, etc.).
-    pub entity_type: EntityType,
-    /// Display name.
-    pub name: String,
-    /// Key-value attributes.
-    pub attributes: serde_json::Value,
-    /// When this entity was created.
-    pub created_at: chrono::DateTime<chrono::Utc>,
-    /// When this entity was last updated.
-    pub updated_at: chrono::DateTime<chrono::Utc>,
-}
-
-/// Types of entities in the knowledge graph.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum EntityType {
-    Person,
-    Project,
-    Event,
-    Preference,
-    Task,
-    Location,
-    Organization,
-    Topic,
-    Custom(String),
-}
-
-/// A relationship between two entities.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct KnowledgeRelation {
-    /// Source entity ID.
-    pub from_id: Uuid,
-    /// Target entity ID.
-    pub to_id: Uuid,
-    /// Relationship type.
-    pub relation_type: RelationType,
-    /// Optional metadata about this relationship.
-    pub metadata: Option<serde_json::Value>,
-}
-
-/// Types of relationships between entities.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum RelationType {
-    WorksWith,
-    DependsOn,
-    Prefers,
-    ScheduledFor,
-    BelongsTo,
-    RelatedTo,
-    CreatedBy,
-    AssignedTo,
-    Custom(String),
-}
-
 /// Result of a self-consistency vote.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VoteResult {

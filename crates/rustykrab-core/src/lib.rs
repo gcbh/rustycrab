@@ -11,8 +11,7 @@ pub use capability::{Capability, CapabilitySet};
 pub use error::{Error, Result, ToolError, ToolErrorKind};
 pub use model::ModelProvider;
 pub use orchestration::{
-    KnowledgeEntity, KnowledgeRelation, OrchestrationConfig, RecursiveCall, SubTask, SubTaskResult,
-    TaskComplexity, VoteResult,
+    OrchestrationConfig, RecursiveCall, SubTask, SubTaskResult, TaskComplexity, VoteResult,
 };
 pub use session::Session;
 pub use tool::Tool;

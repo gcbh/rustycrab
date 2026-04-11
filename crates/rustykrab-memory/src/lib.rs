@@ -56,7 +56,6 @@ pub mod chunking;
 pub mod config;
 pub mod embedding;
 pub mod extraction;
-pub mod knowledge_graph;
 pub mod lifecycle;
 pub mod retrieval;
 pub mod scoring;

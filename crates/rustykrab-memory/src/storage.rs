@@ -359,31 +359,6 @@ impl SqliteMemoryStorage {
                 tokenize='unicode61 remove_diacritics 2'
             );
 
-            -- Knowledge graph (migrated from sled)
-            CREATE TABLE IF NOT EXISTS kg_entities (
-                id          TEXT PRIMARY KEY,
-                entity_type TEXT NOT NULL,
-                name        TEXT NOT NULL,
-                attributes  TEXT NOT NULL DEFAULT '{}',
-                created_at  TEXT NOT NULL,
-                updated_at  TEXT NOT NULL
-            );
-            CREATE INDEX IF NOT EXISTS idx_kg_entities_name
-                ON kg_entities(name COLLATE NOCASE);
-            CREATE INDEX IF NOT EXISTS idx_kg_entities_type
-                ON kg_entities(entity_type);
-
-            CREATE TABLE IF NOT EXISTS kg_relations (
-                from_id       TEXT NOT NULL,
-                to_id         TEXT NOT NULL,
-                relation_type TEXT NOT NULL,
-                metadata      TEXT,
-                PRIMARY KEY (from_id, to_id, relation_type)
-            );
-            CREATE INDEX IF NOT EXISTS idx_kg_relations_from
-                ON kg_relations(from_id);
-            CREATE INDEX IF NOT EXISTS idx_kg_relations_to
-                ON kg_relations(to_id);
             ",
         )
         .map_err(storage_err)?;
