@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.1] - 2026-04-11
+
+- Fix net_scan timeout: skip non-retryable errors and add deadline awareness (#258)
+
 ## [1.4.0] - 2026-04-11
 
 - Add central secret registry and cross-platform OS keychain support (#255)
