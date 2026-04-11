@@ -1,3 +1,4 @@
+mod chat_map;
 mod conversation;
 mod jobs;
 pub mod keychain;
@@ -10,6 +11,7 @@ use rustykrab_core::Error;
 use std::sync::Mutex;
 use zeroize::Zeroizing;
 
+pub use chat_map::ChatMapStore;
 pub use conversation::ConversationStore;
 pub use jobs::{JobStore, ScheduledJob};
 pub use secret::SecretStore;
@@ -80,6 +82,14 @@ impl Store {
             CREATE INDEX IF NOT EXISTS idx_scheduled_jobs_due
                 ON scheduled_jobs (next_run_at)
                 WHERE enabled = 1;
+
+            CREATE TABLE IF NOT EXISTS telegram_chat_map (
+                chat_id    INTEGER NOT NULL,
+                thread_id  INTEGER NOT NULL DEFAULT 0,
+                conv_id    TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                UNIQUE(chat_id, thread_id)
+            );
             ",
         )
         .map_err(|e| Error::Storage(e.to_string()))?;
@@ -99,6 +109,11 @@ impl Store {
     /// Return a handle for scheduled-job operations.
     pub fn jobs(&self) -> JobStore {
         JobStore::new(Arc::clone(&self.conn))
+    }
+
+    /// Return a handle for Telegram chat/thread → conversation mapping.
+    pub fn chat_map(&self) -> ChatMapStore {
+        ChatMapStore::new(Arc::clone(&self.conn))
     }
 
     /// Flush all pending writes to disk.

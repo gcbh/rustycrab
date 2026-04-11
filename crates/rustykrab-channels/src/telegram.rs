@@ -23,6 +23,9 @@ const SEND_MAX_RETRIES: u32 = 3;
 /// An inbound message with channel-specific routing metadata.
 pub struct ChannelMessage {
     pub chat_id: i64,
+    /// Telegram forum topic thread ID. `0` means no thread (non-forum chat
+    /// or the implicit "General" topic).
+    pub thread_id: i64,
     pub message: Message,
     /// If true, the conversation for this chat should be reset.
     pub reset: bool,
@@ -96,12 +99,18 @@ impl TelegramChannel {
     }
 
     /// Send a "typing" chat action so the user sees the bot is working.
-    pub async fn send_typing(&self, chat_id: i64) -> Result<()> {
+    ///
+    /// When `thread_id > 0`, the typing indicator is scoped to that forum
+    /// topic so it appears in the correct thread.
+    pub async fn send_typing(&self, chat_id: i64, thread_id: i64) -> Result<()> {
         let url = format!("{}/sendChatAction", self.api_base);
-        let body = serde_json::json!({
+        let mut body = serde_json::json!({
             "chat_id": chat_id,
             "action": "typing",
         });
+        if thread_id > 0 {
+            body["message_thread_id"] = serde_json::json!(thread_id);
+        }
 
         let resp = self
             .client
@@ -122,21 +131,22 @@ impl TelegramChannel {
     /// Send a text message to a Telegram chat, automatically splitting
     /// messages that exceed Telegram's 4096 character limit.
     ///
+    /// When `thread_id > 0`, the message is posted inside that forum topic.
     /// Uses Markdown parse mode with automatic plain-text fallback if
     /// Telegram rejects the formatting.
-    pub async fn send_text(&self, chat_id: i64, text: &str) -> Result<()> {
+    pub async fn send_text(&self, chat_id: i64, text: &str, thread_id: i64) -> Result<()> {
         let chunks = split_message(text, TELEGRAM_MAX_LENGTH);
         for chunk in &chunks {
-            self.send_single_message(chat_id, chunk).await?;
+            self.send_single_message(chat_id, chunk, thread_id).await?;
         }
         Ok(())
     }
 
     /// Send a single message chunk with retry and Markdown fallback.
-    async fn send_single_message(&self, chat_id: i64, text: &str) -> Result<()> {
+    async fn send_single_message(&self, chat_id: i64, text: &str, thread_id: i64) -> Result<()> {
         // First attempt: with Markdown.
         match self
-            .try_send(chat_id, text, Some("Markdown"), SEND_MAX_RETRIES)
+            .try_send(chat_id, text, Some("Markdown"), SEND_MAX_RETRIES, thread_id)
             .await
         {
             Ok(()) => Ok(()),
@@ -146,7 +156,8 @@ impl TelegramChannel {
                 if err_str.contains("400") || err_str.contains("parse") || err_str.contains("can't")
                 {
                     tracing::debug!("Markdown rejected by Telegram, retrying as plain text");
-                    self.try_send(chat_id, text, None, SEND_MAX_RETRIES).await
+                    self.try_send(chat_id, text, None, SEND_MAX_RETRIES, thread_id)
+                        .await
                 } else {
                     Err(e)
                 }
@@ -161,6 +172,7 @@ impl TelegramChannel {
         text: &str,
         parse_mode: Option<&str>,
         max_retries: u32,
+        thread_id: i64,
     ) -> Result<()> {
         let url = format!("{}/sendMessage", self.api_base);
         let mut body = serde_json::json!({
@@ -169,6 +181,9 @@ impl TelegramChannel {
         });
         if let Some(mode) = parse_mode {
             body["parse_mode"] = serde_json::json!(mode);
+        }
+        if thread_id > 0 {
+            body["message_thread_id"] = serde_json::json!(thread_id);
         }
 
         let mut last_err = None;
@@ -371,6 +386,7 @@ impl TelegramChannel {
         };
 
         let chat_id = msg.chat.id;
+        let thread_id = msg.message_thread_id.unwrap_or(0);
 
         // Chat allowlist check.
         if !self.allowed_chats.is_empty() && !self.allowed_chats.contains(&chat_id) {
@@ -392,7 +408,7 @@ impl TelegramChannel {
 
         // Handle bot commands before forwarding to the agent.
         if let Some(reply) = self.handle_command(&text, chat_id).await {
-            let _ = self.send_text(chat_id, &reply).await;
+            let _ = self.send_text(chat_id, &reply, thread_id).await;
             return Ok(());
         }
 
@@ -402,7 +418,7 @@ impl TelegramChannel {
             .and_then(|u| u.username.as_deref())
             .unwrap_or("unknown");
 
-        tracing::info!(chat_id, %from, "received Telegram message");
+        tracing::info!(chat_id, thread_id, %from, "received Telegram message");
 
         let message = Message {
             id: Uuid::new_v4(),
@@ -414,6 +430,7 @@ impl TelegramChannel {
         self.inbound_tx
             .send(ChannelMessage {
                 chat_id,
+                thread_id,
                 message,
                 reset: false,
             })
@@ -579,6 +596,12 @@ pub struct TelegramMessage {
     pub from: Option<User>,
     pub text: Option<String>,
     pub date: i64,
+    /// Forum topic thread ID. Present when the message belongs to a forum topic.
+    #[serde(default)]
+    pub message_thread_id: Option<i64>,
+    /// Whether this message was sent inside a forum topic.
+    #[serde(default)]
+    pub is_topic_message: Option<bool>,
 }
 
 #[derive(Deserialize)]
