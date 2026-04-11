@@ -101,9 +101,6 @@ jobs:
           - target: aarch64-apple-darwin
             os: macos-14
             artifact: rustykrab-cli
-          - target: x86_64-apple-darwin
-            os: macos-13
-            artifact: rustykrab-cli
 
     steps:
       - uses: actions/checkout@v4
