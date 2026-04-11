@@ -2,15 +2,13 @@ use axum::http::StatusCode;
 use chrono::Utc;
 use uuid::Uuid;
 
+use crate::AppState;
 use rustykrab_agent::{AgentEvent, AgentRunner};
 use rustykrab_core::capability::CapabilitySet;
 use rustykrab_core::orchestration::TaskComplexity;
 use rustykrab_core::session::Session;
 use rustykrab_core::types::{Conversation, Message, MessageContent, Role};
 use rustykrab_skills::SystemPromptBuilder;
-use rustykrab_store::memory::extract_keywords;
-
-use crate::AppState;
 
 /// Build the system prompt and inject it as the first message in the conversation.
 ///
@@ -52,31 +50,9 @@ async fn build_and_inject_system_prompt(
     if let Some(task_guidance) = profile.task_type_guidance() {
         builder = builder.with_task_guidance(task_guidance);
     }
-    // Associative memory recall: extract keywords from the user's message,
-    // match against stored memory tags, and inject relevant facts.
-    // No LLM call — just keyword extraction + tag matching.
-    let keywords = extract_keywords(user_content);
-    if !keywords.is_empty() {
-        match state.store.memories().recall(conv.id, &keywords) {
-            Ok(memories) if !memories.is_empty() => {
-                let mut recall_text =
-                    String::from("RECALLED MEMORIES (relevant to this message):\n");
-                for mem in memories.iter().take(10) {
-                    recall_text.push_str(&format!("- [{}] {}\n", mem.id, mem.fact));
-                }
-                builder = builder.with_memory(&recall_text);
-                tracing::info!(
-                    count = memories.len(),
-                    keywords = ?keywords,
-                    "associative recall matched memories"
-                );
-            }
-            Ok(_) => {} // no matches — that's fine
-            Err(e) => {
-                tracing::warn!("associative recall failed: {e}");
-            }
-        }
-    }
+    // Memory recall is now handled by the hybrid memory system
+    // (rustykrab-memory) via the memory_search tool, not injected
+    // into the system prompt from the old sled-based MemoryStore.
 
     // Inject SKILL.md catalog (only satisfied skills).
     let satisfied: Vec<_> = state

@@ -5,7 +5,6 @@ use chrono::{Duration, Utc};
 use tracing::debug;
 use uuid::Uuid;
 
-use crate::bm25::Bm25Index;
 use crate::config::MemoryConfig;
 use crate::embedding::{self, Embedder};
 use crate::scoring::rrf_fuse_with_sources;
@@ -15,14 +14,13 @@ use crate::types::RetrievalSource;
 
 /// Four-way parallel retrieval pipeline with RRF fusion.
 ///
-/// Executes semantic (vector), keyword (BM25), graph (link expansion),
+/// Executes semantic (vector), keyword (FTS5), graph (link expansion),
 /// and temporal (recency) retrieval arms in parallel via `tokio::join!`,
 /// then fuses results with weighted Reciprocal Rank Fusion (k=60).
 pub struct MemoryRetriever {
     storage: Arc<dyn MemoryStorage>,
     embedder: Arc<dyn Embedder>,
     config: MemoryConfig,
-    bm25_index: Arc<tokio::sync::Mutex<Bm25Index>>,
 }
 
 impl MemoryRetriever {
@@ -30,20 +28,18 @@ impl MemoryRetriever {
         storage: Arc<dyn MemoryStorage>,
         embedder: Arc<dyn Embedder>,
         config: MemoryConfig,
-        bm25_index: Arc<tokio::sync::Mutex<Bm25Index>>,
     ) -> Self {
         Self {
             storage,
             embedder,
             config,
-            bm25_index,
         }
     }
 
     /// Recall memories relevant to a query.
     ///
     /// Pipeline:
-    /// 1. Embed query + tokenize for BM25 (parallel with dispatch setup).
+    /// 1. Embed query + tokenize for FTS5 (parallel with dispatch setup).
     /// 2. Dispatch four retrieval arms in parallel via `tokio::join!`.
     /// 3. Fuse with weighted RRF.
     /// 4. Multiply by lifecycle effective_score.
@@ -70,7 +66,7 @@ impl MemoryRetriever {
 
         let (semantic_results, keyword_results, graph_results, temporal_results) = tokio::join!(
             self.retrieve_semantic(&query_embedding, &chunk_embeddings, candidates),
-            self.retrieve_bm25(query, agent_id, candidates),
+            self.retrieve_fts(query, agent_id, candidates),
             self.retrieve_graph(&query_embedding, &chunk_embeddings, candidates),
             self.retrieve_temporal(agent_id, candidates),
         );
@@ -206,21 +202,14 @@ impl MemoryRetriever {
         Ok(results)
     }
 
-    /// Keyword retrieval: BM25 search over in-memory inverted index,
-    /// scoped to the querying agent.
-    async fn retrieve_bm25(
+    /// Keyword retrieval via SQLite FTS5, scoped to the querying agent.
+    async fn retrieve_fts(
         &self,
         query: &str,
         agent_id: Uuid,
         limit: usize,
     ) -> rustykrab_core::Result<Vec<(Uuid, usize)>> {
-        let index = self.bm25_index.lock().await;
-        let results = index.search(query, agent_id, limit);
-        Ok(results
-            .into_iter()
-            .enumerate()
-            .map(|(rank, (id, _score))| (id, rank))
-            .collect())
+        self.storage.fts_search(query, agent_id, limit).await
     }
 
     /// Graph retrieval: find semantically similar memories, then expand

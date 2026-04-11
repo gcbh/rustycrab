@@ -94,6 +94,14 @@ impl Default for AgentConfig {
     }
 }
 
+/// Callback invoked with each message added to the conversation.
+/// Used for auto-persisting turns to memory.
+pub type OnMessageCallback = Arc<dyn Fn(&Message) + Send + Sync>;
+
+/// Callback invoked with messages about to be dropped from context.
+/// Used for archival preservation before truncation.
+pub type OnTruncateCallback = Arc<dyn Fn(Vec<Message>) + Send + Sync>;
+
 /// Runs the agent loop: send conversation to model, execute tool calls, repeat.
 ///
 /// Improvements over a basic loop:
@@ -108,6 +116,8 @@ pub struct AgentRunner {
     sandbox: Arc<dyn Sandbox>,
     config: AgentConfig,
     tracer: ExecutionTracer,
+    on_message: Option<OnMessageCallback>,
+    on_truncate: Option<OnTruncateCallback>,
 }
 
 impl AgentRunner {
@@ -122,11 +132,27 @@ impl AgentRunner {
             sandbox,
             config: AgentConfig::default(),
             tracer: ExecutionTracer::new(),
+            on_message: None,
+            on_truncate: None,
         }
     }
 
     pub fn with_config(mut self, config: AgentConfig) -> Self {
         self.config = config;
+        self
+    }
+
+    /// Set a callback invoked on every message added to the conversation.
+    /// Used to auto-persist conversation turns to the memory system.
+    pub fn with_on_message(mut self, callback: OnMessageCallback) -> Self {
+        self.on_message = Some(callback);
+        self
+    }
+
+    /// Set a callback invoked with messages about to be truncated from context.
+    /// Used for archival preservation before dropping messages.
+    pub fn with_on_truncate(mut self, callback: OnTruncateCallback) -> Self {
+        self.on_truncate = Some(callback);
         self
     }
 
@@ -215,6 +241,11 @@ impl AgentRunner {
 
             conv.messages.push(message.clone());
             conv.updated_at = Utc::now();
+
+            // Auto-persist this turn to memory.
+            if let Some(ref cb) = self.on_message {
+                cb(&message);
+            }
 
             // Handle tool calls (single or multi).
             if message.content.has_tool_calls() {
@@ -415,6 +446,11 @@ impl AgentRunner {
 
             conv.messages.push(message.clone());
             conv.updated_at = Utc::now();
+
+            // Auto-persist this turn to memory.
+            if let Some(ref cb) = self.on_message {
+                cb(&message);
+            }
 
             // Handle tool calls.
             if message.content.has_tool_calls() {
@@ -768,6 +804,16 @@ impl AgentRunner {
         } else {
             None
         };
+
+        // Notify callback with messages about to be dropped so they can
+        // be persisted to archival memory before removal.
+        let start = if system_msg.is_some() { 1 } else { 0 };
+        if let Some(ref cb) = self.on_truncate {
+            let to_archive: Vec<Message> = conv.messages[start..keep_from].to_vec();
+            if !to_archive.is_empty() {
+                cb(to_archive);
+            }
+        }
 
         let dropped = keep_from;
         conv.messages = conv.messages.split_off(keep_from);

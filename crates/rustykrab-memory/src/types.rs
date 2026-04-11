@@ -2,6 +2,27 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+/// Scope level for memory visibility.
+///
+/// Controls which memories are visible during retrieval:
+/// - `Session` — only memories from the current session
+/// - `User` — all memories for this user across sessions (default)
+/// - `Agent` — all memories for this agent identity
+/// - `Global` — shared across all agents and users
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MemoryScope {
+    /// Current conversation only.
+    Session,
+    /// All conversations for this user (default for retrieval).
+    #[default]
+    User,
+    /// Per-agent identity.
+    Agent,
+    /// Shared across all agents.
+    Global,
+}
+
 /// Lifecycle stage for memory promotion/demotion.
 ///
 /// Memories progress through stages based on access patterns and value:
@@ -47,6 +68,11 @@ pub struct Memory {
     pub agent_id: Uuid,
     pub content: String,
     pub content_hash: String,
+
+    // Scoping
+    pub scope: MemoryScope,
+    pub session_id: Option<Uuid>,
+    pub user_id: Option<Uuid>,
 
     // Lifecycle
     pub lifecycle_stage: LifecycleStage,

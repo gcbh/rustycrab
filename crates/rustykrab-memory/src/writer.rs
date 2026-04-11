@@ -5,14 +5,15 @@ use sha2::{Digest, Sha256};
 use tracing::{debug, warn};
 use uuid::Uuid;
 
-use crate::bm25::Bm25Index;
 use crate::chunking::chunk_text;
 use crate::config::MemoryConfig;
 use crate::embedding::{cosine_similarity, Embedder};
 use crate::extraction::RegexExtractor;
 use crate::scoring::compute_importance;
 use crate::storage::MemoryStorage;
-use crate::types::{ConversationTurn, ImportanceSource, LifecycleStage, Memory, MemoryChunk};
+use crate::types::{
+    ConversationTurn, ImportanceSource, LifecycleStage, Memory, MemoryChunk, MemoryScope,
+};
 
 /// Dual-track memory writer.
 ///
@@ -30,8 +31,6 @@ pub struct MemoryWriter {
     storage: Arc<dyn MemoryStorage>,
     embedder: Arc<dyn Embedder>,
     config: MemoryConfig,
-    /// Shared mutable BM25 index, protected by a tokio Mutex.
-    bm25_index: Arc<tokio::sync::Mutex<Bm25Index>>,
 }
 
 impl MemoryWriter {
@@ -39,13 +38,11 @@ impl MemoryWriter {
         storage: Arc<dyn MemoryStorage>,
         embedder: Arc<dyn Embedder>,
         config: MemoryConfig,
-        bm25_index: Arc<tokio::sync::Mutex<Bm25Index>>,
     ) -> Self {
         Self {
             storage,
             embedder,
             config,
-            bm25_index,
         }
     }
 
@@ -54,7 +51,7 @@ impl MemoryWriter {
     /// 1. Dedup check via SHA-256 content hash.
     /// 2. Store verbatim memory record as `Working` (sync).
     /// 3. Chunk, embed, and store chunk embeddings (sync).
-    /// 4. Index in BM25 (sync).
+    /// 4. Index in FTS5 (sync).
     /// 5. Compute heuristic importance (sync).
     /// 6. Spawn background extraction + near-duplicate detection (async, never blocks).
     ///
@@ -63,6 +60,20 @@ impl MemoryWriter {
         &self,
         turn: ConversationTurn,
         agent_id: Uuid,
+    ) -> rustykrab_core::Result<Uuid> {
+        self.retain_with_stage(turn, agent_id, LifecycleStage::Episodic)
+            .await
+    }
+
+    /// Retain a conversation turn with an explicit lifecycle stage.
+    ///
+    /// Used by auto-persist to write `Working` memories, and by the
+    /// `memory_save` tool path which writes `Episodic` memories.
+    pub async fn retain_with_stage(
+        &self,
+        turn: ConversationTurn,
+        agent_id: Uuid,
+        stage: LifecycleStage,
     ) -> rustykrab_core::Result<Uuid> {
         // ── SHA-256 dedup ───────────────────────────────────────
         let content_hash = {
@@ -92,7 +103,10 @@ impl MemoryWriter {
             agent_id,
             content: turn.content.clone(),
             content_hash,
-            lifecycle_stage: LifecycleStage::Working,
+            scope: MemoryScope::User,
+            session_id: Some(turn.session_id),
+            user_id: None, // Set by the caller via HybridMemoryBackend
+            lifecycle_stage: stage,
             importance,
             importance_source: ImportanceSource::Heuristic,
             decay_rate: self.config.default_decay_rate,
@@ -148,11 +162,10 @@ impl MemoryWriter {
             self.storage.store_chunks(&chunks).await?;
         }
 
-        // ── BM25 index ─────────────────────────────────────────
-        {
-            let mut index = self.bm25_index.lock().await;
-            index.index_document(memory_id, agent_id, &turn.content);
-        }
+        // ── FTS5 index ─────────────────────────────────────────
+        self.storage
+            .fts_index(memory_id, agent_id, &turn.content)
+            .await?;
 
         // ── Track 2: Async background extraction + near-duplicate check ──
         let storage = Arc::clone(&self.storage);
@@ -205,6 +218,7 @@ impl MemoryWriter {
             memory_id = %memory_id,
             importance = importance,
             chunks = chunk_texts.len(),
+            ?stage,
             "memory retained"
         );
 
@@ -235,18 +249,17 @@ impl MemoryWriter {
         self.retain(turn, agent_id).await
     }
 
-    /// Rebuild the BM25 index from all retrievable memories in storage.
-    /// Call this on startup to hydrate the in-memory index.
-    pub async fn rebuild_bm25_index(&self, agent_id: Uuid) -> rustykrab_core::Result<usize> {
+    /// Rebuild the FTS5 index from all retrievable memories in storage.
+    /// Call this on startup to ensure the FTS index is in sync.
+    pub async fn rebuild_fts_index(&self, agent_id: Uuid) -> rustykrab_core::Result<usize> {
         let memories = self.storage.list_retrievable(agent_id).await?;
-        let mut index = self.bm25_index.lock().await;
-        // Clear existing entries before rebuilding to prevent double-indexing (#128).
-        index.clear();
         let count = memories.len();
         for mem in memories {
-            index.index_document(mem.id, agent_id, &mem.content);
+            self.storage
+                .fts_index(mem.id, agent_id, &mem.content)
+                .await?;
         }
-        debug!(agent_id = %agent_id, indexed = count, "BM25 index rebuilt");
+        debug!(agent_id = %agent_id, indexed = count, "FTS5 index rebuilt");
         Ok(count)
     }
 }

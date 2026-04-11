@@ -8,7 +8,7 @@
 //!    as the source of truth, with extracted facts computed asynchronously in the
 //!    background. This beats extraction-heavy approaches on retrieval benchmarks.
 //!
-//! 2. **Four-way parallel retrieval** — semantic (vector), keyword (BM25), graph
+//! 2. **Four-way parallel retrieval** — semantic (vector), keyword (FTS5), graph
 //!    (link expansion), and temporal (recency) strategies run in parallel via
 //!    `tokio::join!`, then fuse with weighted Reciprocal Rank Fusion (k=60).
 //!
@@ -52,7 +52,6 @@
 //! ```
 
 pub mod backend;
-pub mod bm25;
 pub mod chunking;
 pub mod config;
 pub mod embedding;
@@ -65,18 +64,29 @@ pub mod types;
 
 use std::sync::Arc;
 
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 pub use config::MemoryConfig;
 
-use bm25::Bm25Index;
 use lifecycle::{LifecycleManager, LifecycleSweepStats};
 use retrieval::MemoryRetriever;
 use storage::MemoryStorage;
-use types::{ConversationTurn, Memory, RetrievalResult};
+use types::{ConversationTurn, LifecycleStage, Memory, RetrievalResult};
 use writer::MemoryWriter;
 
 mod writer;
+
+/// Statistics returned from an end-session operation.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct EndSessionStats {
+    /// Number of Working memories transitioned to Episodic.
+    pub working_to_episodic: u32,
+    /// Lifecycle sweep stats (promotion, demotion, tombstoning).
+    pub sweep: LifecycleSweepStats,
+    /// Number of near-duplicate links created.
+    pub near_duplicate_links: u32,
+}
 
 /// The main entry point for the memory system.
 ///
@@ -101,21 +111,10 @@ impl MemorySystem {
         storage: Arc<dyn MemoryStorage>,
         embedder: Arc<dyn embedding::Embedder>,
     ) -> Self {
-        let bm25_index = Arc::new(tokio::sync::Mutex::new(Bm25Index::new()));
+        let writer = MemoryWriter::new(Arc::clone(&storage), Arc::clone(&embedder), config.clone());
 
-        let writer = MemoryWriter::new(
-            Arc::clone(&storage),
-            Arc::clone(&embedder),
-            config.clone(),
-            Arc::clone(&bm25_index),
-        );
-
-        let retriever = MemoryRetriever::new(
-            Arc::clone(&storage),
-            Arc::clone(&embedder),
-            config.clone(),
-            Arc::clone(&bm25_index),
-        );
+        let retriever =
+            MemoryRetriever::new(Arc::clone(&storage), Arc::clone(&embedder), config.clone());
 
         let lifecycle =
             LifecycleManager::new(Arc::clone(&storage), Arc::clone(&embedder), config.clone());
@@ -140,7 +139,18 @@ impl MemorySystem {
         self.writer.retain(turn, agent_id).await
     }
 
-    /// Access the writer directly (e.g., for `save_fact` or `rebuild_bm25_index`).
+    /// Retain a conversation turn with an explicit lifecycle stage.
+    /// Used for auto-persist (Working) vs explicit save (Episodic).
+    pub async fn retain_with_stage(
+        &self,
+        turn: ConversationTurn,
+        agent_id: Uuid,
+        stage: LifecycleStage,
+    ) -> rustykrab_core::Result<Uuid> {
+        self.writer.retain_with_stage(turn, agent_id, stage).await
+    }
+
+    /// Access the writer directly (e.g., for `save_fact`).
     pub fn writer(&self) -> &MemoryWriter {
         &self.writer
     }
@@ -196,6 +206,46 @@ impl MemorySystem {
             .await
     }
 
+    /// End a session: finalize (Working → Episodic), run lifecycle sweep,
+    /// and detect near-duplicates.
+    ///
+    /// Combines `finalize_session` + `lifecycle_sweep` + `detect_near_duplicates`
+    /// into a single call for convenience.
+    pub async fn end_session(
+        &self,
+        agent_id: Uuid,
+        session_id: Uuid,
+    ) -> rustykrab_core::Result<EndSessionStats> {
+        // 1. Finalize: transition Working memories for this session to Episodic.
+        let working_to_episodic = self
+            .lifecycle
+            .finalize_session(agent_id, session_id)
+            .await?;
+
+        // 2. Run lifecycle sweep (promote/demote/tombstone).
+        let sweep = self.lifecycle.sweep(agent_id).await?;
+
+        // 3. Detect near-duplicates.
+        let near_duplicate_links = self.lifecycle.detect_near_duplicates(agent_id).await?;
+
+        tracing::info!(
+            %agent_id,
+            %session_id,
+            working_to_episodic,
+            promoted = sweep.promoted_to_semantic,
+            demoted = sweep.demoted_to_archival,
+            tombstoned = sweep.tombstoned,
+            near_duplicate_links,
+            "session ended, lifecycle complete"
+        );
+
+        Ok(EndSessionStats {
+            working_to_episodic,
+            sweep,
+            near_duplicate_links,
+        })
+    }
+
     // ── Direct access ───────────────────────────────────────────
 
     /// Get a memory by ID.
@@ -222,8 +272,8 @@ impl MemorySystem {
         &self.config
     }
 
-    /// Rebuild the BM25 index from persisted memories (call on startup).
+    /// Rebuild the FTS5 index from persisted memories (call on startup).
     pub async fn rebuild_indexes(&self, agent_id: Uuid) -> rustykrab_core::Result<usize> {
-        self.writer.rebuild_bm25_index(agent_id).await
+        self.writer.rebuild_fts_index(agent_id).await
     }
 }
