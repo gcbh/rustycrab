@@ -3485,6 +3485,7 @@ dependencies = [
  "imap",
  "imap-proto",
  "lettre",
+ "libc",
  "mail-parser",
  "reqwest 0.13.2",
  "rustls",
