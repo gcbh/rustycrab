@@ -161,6 +161,20 @@ impl MemorySystem {
         self.retriever.recall(query, agent_id, limit).await
     }
 
+    // ── Session lifecycle ─────────────────────────────────────────
+
+    /// Flush working memory at session end.
+    ///
+    /// Transitions all `Working` memories for the agent to `Episodic`,
+    /// where they become subject to decay, promotion, and demotion.
+    /// Call this when a conversation session ends.
+    pub async fn flush_session(
+        &self,
+        agent_id: Uuid,
+    ) -> rustykrab_core::Result<u32> {
+        self.lifecycle.flush_session(agent_id).await
+    }
+
     // ── Lifecycle management ────────────────────────────────────
 
     /// Run a lifecycle sweep: promote, demote, and tombstone memories.

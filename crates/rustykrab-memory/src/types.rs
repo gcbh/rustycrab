@@ -9,9 +9,13 @@ use uuid::Uuid;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum LifecycleStage {
-    /// Active working memory for the current session.
+    /// Active working memory — every turn in the current session is
+    /// auto-retained here. Flushed to `Episodic` at session end via
+    /// [`MemorySystem::flush_session`]. Not touched by lifecycle sweep.
     Working,
-    /// Recent episodic memories from past conversations.
+    /// Post-session memories subject to decay, promotion, and demotion.
+    /// Agent-curated facts (`memory_save`) skip `Working` and land here
+    /// directly with an importance boost.
     Episodic,
     /// Consolidated long-term knowledge (promoted from episodic).
     Semantic,

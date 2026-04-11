@@ -43,7 +43,23 @@ impl LifecycleManager {
         }
     }
 
+    /// Flush working memory: transition all `Working` memories to `Episodic`.
+    ///
+    /// Call this at session end. Once in `Episodic`, memories are subject
+    /// to normal decay, promotion, and demotion via [`sweep`].
+    pub async fn flush_session(
+        &self,
+        agent_id: Uuid,
+    ) -> rustykrab_core::Result<u32> {
+        let count = self.storage.flush_working_to_episodic(agent_id).await?;
+        info!(agent_id = %agent_id, flushed = count, "working memory flushed to episodic");
+        Ok(count)
+    }
+
     /// Run a full lifecycle sweep for an agent's memories.
+    ///
+    /// Only operates on `Episodic` and `Archival` memories — `Working`
+    /// memories are untouched (they belong to an active session).
     ///
     /// 1. Promote: episodic → semantic (accessed ≥3×, older than 7 days).
     /// 2. Demote: episodic → archival (effective score < threshold, idle > 30 days).

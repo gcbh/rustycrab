@@ -48,8 +48,12 @@ impl MemoryWriter {
 
     /// Retain a conversation turn in memory.
     ///
+    /// New memories start as `Working` — the full, unfiltered session
+    /// context. At session end, call [`MemorySystem::flush_session`] to
+    /// transition them to `Episodic` where decay and lifecycle take over.
+    ///
     /// 1. Dedup check via SHA-256 content hash.
-    /// 2. Store verbatim memory record (sync).
+    /// 2. Store verbatim memory record as `Working` (sync).
     /// 3. Chunk, embed, and store chunk embeddings (sync).
     /// 4. Index in BM25 (sync).
     /// 5. Compute heuristic importance (sync).
@@ -89,7 +93,7 @@ impl MemoryWriter {
             agent_id,
             content: turn.content.clone(),
             content_hash,
-            lifecycle_stage: LifecycleStage::Episodic,
+            lifecycle_stage: LifecycleStage::Working,
             importance,
             importance_source: ImportanceSource::Heuristic,
             decay_rate: self.config.default_decay_rate,
@@ -173,8 +177,12 @@ impl MemoryWriter {
         Ok(memory_id)
     }
 
-    /// Store a simple fact with tags (backward-compatible with the old
-    /// MemoryStore interface). Creates a memory record from the fact string.
+    /// Store an agent-curated fact with tags.
+    ///
+    /// Unlike auto-retained turns (which start as `Working`), explicitly
+    /// saved facts go straight to `Episodic` with `user_flagged: true`
+    /// for an importance boost. This is the "emphasize this" signal —
+    /// the agent marking something as worth remembering long-term.
     pub async fn save_fact(
         &self,
         agent_id: Uuid,
@@ -191,10 +199,18 @@ impl MemoryWriter {
             token_count: None,
             metadata: crate::types::TurnMetadata {
                 tags: tags.to_vec(),
+                user_flagged: true,
                 ..Default::default()
             },
         };
-        self.retain(turn, agent_id).await
+        let memory_id = self.retain(turn, agent_id).await?;
+
+        // Promote directly to Episodic — agent-curated facts skip Working.
+        self.storage
+            .update_stage(memory_id, LifecycleStage::Episodic)
+            .await?;
+
+        Ok(memory_id)
     }
 
     /// Rebuild the BM25 index from all retrievable memories in storage.

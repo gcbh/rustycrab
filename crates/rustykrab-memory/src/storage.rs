@@ -103,6 +103,11 @@ pub trait MemoryStorage: Send + Sync {
         &self,
         updates: &[(Uuid, LifecycleStage)],
     ) -> Result<u32>;
+
+    /// Transition all Working memories for an agent to Episodic.
+    /// Called at session end to flush working memory into long-term storage.
+    /// Returns the number of memories transitioned.
+    async fn flush_working_to_episodic(&self, agent_id: Uuid) -> Result<u32>;
 }
 
 // ── SQLite helpers ──────────────────────────────────────────────
@@ -992,6 +997,21 @@ impl MemoryStorage for SqliteMemoryStorage {
             }
             tx.commit().map_err(storage_err)?;
             Ok(count)
+        })
+        .await
+    }
+
+    async fn flush_working_to_episodic(&self, agent_id: Uuid) -> Result<u32> {
+        let agent_str = agent_id.to_string();
+        self.with_conn(move |conn| {
+            let affected = conn
+                .execute(
+                    "UPDATE memories SET lifecycle_stage = 'episodic'
+                     WHERE agent_id = ?1 AND lifecycle_stage = 'working' AND is_valid = 1",
+                    params![agent_str],
+                )
+                .map_err(storage_err)?;
+            Ok(affected as u32)
         })
         .await
     }
