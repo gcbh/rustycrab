@@ -199,9 +199,8 @@ impl JobStore {
 
 /// Parse a schedule string, returning `(is_one_shot, next_run_at)`.
 fn parse_schedule(schedule: &str, now: DateTime<Utc>) -> Result<(bool, DateTime<Utc>), Error> {
-    // Try ISO 8601 timestamp first (one-shot).
-    if let Ok(ts) = DateTime::parse_from_rfc3339(schedule) {
-        let ts = ts.with_timezone(&Utc);
+    // Try ISO 8601 / RFC 3339 timestamp first (one-shot).
+    if let Some(ts) = try_parse_datetime(schedule) {
         if ts <= now {
             return Err(Error::Config(
                 "one-shot schedule must be in the future".to_string(),
@@ -215,14 +214,58 @@ fn parse_schedule(schedule: &str, now: DateTime<Utc>) -> Result<(bool, DateTime<
     Ok((false, next))
 }
 
+/// Try to parse a datetime string in multiple common formats.
+///
+/// Accepts RFC 3339 (`2025-04-12T14:30:00Z`), with offset
+/// (`2025-04-12T14:30:00+02:00`), or naive datetime assumed as UTC
+/// (`2025-04-12T14:30:00`, `2025-04-12 14:30:00`).
+fn try_parse_datetime(s: &str) -> Option<DateTime<Utc>> {
+    // RFC 3339 with timezone
+    if let Ok(ts) = DateTime::parse_from_rfc3339(s) {
+        return Some(ts.with_timezone(&Utc));
+    }
+    // Naive datetime (no timezone) — assume UTC
+    if let Ok(naive) = chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S") {
+        return Some(naive.and_utc());
+    }
+    if let Ok(naive) = chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S") {
+        return Some(naive.and_utc());
+    }
+    // Date + time without seconds
+    if let Ok(naive) = chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M") {
+        return Some(naive.and_utc());
+    }
+    if let Ok(naive) = chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M") {
+        return Some(naive.and_utc());
+    }
+    None
+}
+
 /// Compute the next occurrence of a cron expression after `after`.
+///
+/// Handles both standard 5-field cron (`minute hour dom month dow`) and
+/// 6-field cron with seconds (`second minute hour dom month dow`).
 fn compute_next_cron_run(expression: &str, after: DateTime<Utc>) -> Result<DateTime<Utc>, Error> {
-    let cron: Cron = expression
+    let normalized = normalize_cron_expression(expression);
+    let cron: Cron = normalized
         .parse()
-        .map_err(|e| Error::Config(format!("invalid cron expression: {e}")))?;
+        .map_err(|e| Error::Config(format!("invalid cron expression '{expression}': {e}")))?;
 
     cron.find_next_occurrence(&after, false)
         .map_err(|e| Error::Config(format!("could not compute next cron occurrence: {e}")))
+}
+
+/// Normalize a cron expression for `croner` which requires 6 fields
+/// (seconds minutes hours day-of-month month day-of-week).
+///
+/// If the input has 5 fields (standard cron), prepend `0` for seconds.
+fn normalize_cron_expression(expr: &str) -> String {
+    let fields: Vec<&str> = expr.split_whitespace().collect();
+    if fields.len() == 5 {
+        format!("0 {expr}")
+    } else {
+        expr.to_string()
+    }
 }
 
 /// Parse an RFC 3339 timestamp stored in SQLite.
