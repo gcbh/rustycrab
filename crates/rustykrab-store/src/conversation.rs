@@ -27,6 +27,8 @@ impl ConversationStore {
             updated_at: Utc::now(),
             summary: None,
             detected_profile: None,
+            channel_source: None,
+            channel_id: None,
         };
         self.save(&conv)?;
         Ok(conv)

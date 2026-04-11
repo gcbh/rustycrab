@@ -1025,6 +1025,7 @@
             created_at: conv.created_at,
             updated_at: conv.updated_at,
             preview: preview.slice(0, 60),
+            channel_source: conv.channel_source || null,
           });
         } catch { /* skip broken entries */ }
       }
@@ -1048,8 +1049,11 @@
     for (const conv of conversations) {
       const el = document.createElement('div');
       el.className = 'conversation-item' + (conv.id === activeConvId ? ' active' : '');
+      const channelBadge = conv.channel_source === 'telegram' ? '<span style="opacity:0.5;font-size:12px;margin-left:4px" title="Telegram">TG</span>'
+        : conv.channel_source === 'signal' ? '<span style="opacity:0.5;font-size:12px;margin-left:4px" title="Signal">SIG</span>'
+        : '';
       el.innerHTML = `
-        <div class="conversation-item-title">${escapeHtml(conv.preview)}</div>
+        <div class="conversation-item-title">${escapeHtml(conv.preview)}${channelBadge}</div>
         <div class="conversation-item-date">${formatDate(conv.updated_at)}</div>
         <button class="btn-icon delete-btn" data-id="${conv.id}" title="Delete">
           <svg viewBox="0 0 24 24" style="width:16px;height:16px"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>

@@ -156,6 +156,12 @@ pub struct Conversation {
     /// Updated every turn — the model always tags its response.
     #[serde(default)]
     pub detected_profile: Option<String>,
+    /// Which channel created this conversation (e.g. "telegram", "signal", "web").
+    #[serde(default)]
+    pub channel_source: Option<String>,
+    /// Channel-specific identifier (e.g. Telegram chat_id as string).
+    #[serde(default)]
+    pub channel_id: Option<String>,
 }
 
 /// JSON-Schema-style description of a tool parameter.
