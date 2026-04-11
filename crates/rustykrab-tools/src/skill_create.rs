@@ -139,11 +139,13 @@ impl Tool for SkillCreateTool {
         if !requires_env.is_empty() || !requires_bins.is_empty() {
             fm.push_str("\n\n[requires]");
             if !requires_env.is_empty() {
-                let env_items: Vec<String> = requires_env.iter().map(|v| format!("\"{v}\"")).collect();
+                let env_items: Vec<String> =
+                    requires_env.iter().map(|v| format!("\"{v}\"")).collect();
                 fm.push_str(&format!("\nenv = [{}]", env_items.join(", ")));
             }
             if !requires_bins.is_empty() {
-                let bin_items: Vec<String> = requires_bins.iter().map(|b| format!("\"{b}\"")).collect();
+                let bin_items: Vec<String> =
+                    requires_bins.iter().map(|b| format!("\"{b}\"")).collect();
                 fm.push_str(&format!("\nbins = [{}]", bin_items.join(", ")));
             }
         }
