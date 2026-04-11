@@ -223,7 +223,10 @@ mod tests {
             .await;
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
-        assert!(err.contains("filesystem read access not permitted"), "got: {err}");
+        assert!(
+            err.contains("filesystem read access not permitted"),
+            "got: {err}"
+        );
     }
 
     #[tokio::test]
@@ -238,7 +241,10 @@ mod tests {
             .await;
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
-        assert!(err.contains("filesystem write access not permitted"), "got: {err}");
+        assert!(
+            err.contains("filesystem write access not permitted"),
+            "got: {err}"
+        );
     }
 
     #[tokio::test]
@@ -246,7 +252,11 @@ mod tests {
         let sandbox = ProcessSandbox::new();
         let policy = SandboxPolicy::default();
         let result = sandbox
-            .execute("http_request", json!({"url": "http://example.com"}), &policy)
+            .execute(
+                "http_request",
+                json!({"url": "http://example.com"}),
+                &policy,
+            )
             .await;
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
@@ -289,7 +299,10 @@ mod tests {
         // Trusted allows fs_read, fs_write, net but NOT spawn
         assert!(sandbox.execute("read", json!({}), &policy).await.is_ok());
         assert!(sandbox.execute("write", json!({}), &policy).await.is_ok());
-        assert!(sandbox.execute("http_request", json!({}), &policy).await.is_ok());
+        assert!(sandbox
+            .execute("http_request", json!({}), &policy)
+            .await
+            .is_ok());
         // Spawn is still denied in trusted policy
         assert!(sandbox.execute("exec", json!({}), &policy).await.is_err());
     }
