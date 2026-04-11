@@ -2,7 +2,6 @@ mod chat_map;
 mod conversation;
 mod jobs;
 pub mod keychain;
-pub mod registry;
 mod secret;
 
 use std::path::Path;
