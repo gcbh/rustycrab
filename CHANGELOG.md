@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.3] - 2026-04-11
+
+- Drop Intel macOS build, fix release workflow (#257)
+
 ## [1.3.2] - 2026-04-11
 
 - Fix macOS release builds: pin runners to correct architectures, add manual dispatch (#254)
