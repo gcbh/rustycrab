@@ -81,6 +81,18 @@ git push origin main --tags
 - `cargo fmt --all -- --check`
 - Security audit via `rustsec/audit-check`
 
+### Pre-push: run CI checks locally
+
+Before pushing a PR, run the same checks that CI enforces to avoid round-tripping on failures:
+
+```bash
+cargo fmt --all -- --check    # formatting
+cargo clippy --workspace --all-targets -- -D warnings   # lint (warnings = errors)
+cargo test --workspace        # tests
+```
+
+All three must pass — CI will block the merge otherwise.
+
 ## Code conventions
 
 - Rust edition 2021, MSRV 1.88
