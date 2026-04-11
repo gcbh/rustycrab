@@ -170,10 +170,10 @@ async fn main() -> anyhow::Result<()> {
 
     let session_id = Uuid::new_v4();
 
-    // Rebuild in-memory BM25 index from persisted memories.
+    // Rebuild FTS5 index from persisted memories (idempotent).
     let indexed = memory_system.rebuild_indexes(agent_id).await?;
     if indexed > 0 {
-        tracing::info!(indexed, "BM25 index rebuilt from stored memories");
+        tracing::info!(indexed, "FTS5 index rebuilt from stored memories");
     }
 
     let memory_backend: Arc<dyn MemoryBackend> = Arc::new(MemoryAdapter {

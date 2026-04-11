@@ -11,7 +11,7 @@ use crate::MemorySystem;
 /// This allows the hybrid memory system to be used as a drop-in
 /// replacement for the old tag-based `MemoryStore`, providing the same
 /// tool interface (memory_save, memory_search, memory_get, memory_delete)
-/// while transparently using vector search, BM25, and lifecycle scoring.
+/// while transparently using vector search, FTS5, and lifecycle scoring.
 ///
 /// The trait itself is defined in `rustykrab-tools::memory_backend`.
 /// We re-implement it here structurally to avoid a circular dependency;
@@ -20,18 +20,45 @@ pub struct HybridMemoryBackend {
     system: Arc<MemorySystem>,
     agent_id: Uuid,
     session_id: Uuid,
+    user_id: Option<Uuid>,
 }
 
 impl HybridMemoryBackend {
-    pub fn new(system: Arc<MemorySystem>, agent_id: Uuid, session_id: Uuid) -> Self {
+    pub fn new(
+        system: Arc<MemorySystem>,
+        agent_id: Uuid,
+        session_id: Uuid,
+    ) -> Self {
         Self {
             system,
             agent_id,
             session_id,
+            user_id: None,
         }
     }
 
-    /// Search memories using hybrid retrieval (vector + BM25 + graph + temporal).
+    /// Set the user ID for scoped retrieval.
+    pub fn with_user_id(mut self, user_id: Uuid) -> Self {
+        self.user_id = Some(user_id);
+        self
+    }
+
+    /// Get the memory system reference (for auto-persist wiring).
+    pub fn system(&self) -> &Arc<MemorySystem> {
+        &self.system
+    }
+
+    /// Get the agent ID.
+    pub fn agent_id(&self) -> Uuid {
+        self.agent_id
+    }
+
+    /// Get the session ID.
+    pub fn session_id(&self) -> Uuid {
+        self.session_id
+    }
+
+    /// Search memories using hybrid retrieval (vector + FTS5 + graph + temporal).
     pub async fn search(
         &self,
         query: &str,
@@ -50,6 +77,7 @@ impl HybridMemoryBackend {
                     "rrf_score": r.rrf_score,
                     "sources": r.sources.iter().map(|s| format!("{:?}", s)).collect::<Vec<_>>(),
                     "lifecycle_stage": format!("{:?}", r.memory.lifecycle_stage),
+                    "scope": format!("{:?}", r.memory.scope),
                     "importance": r.memory.importance,
                     "access_count": r.memory.access_count,
                     "created_at": r.memory.created_at.to_rfc3339(),
@@ -74,6 +102,7 @@ impl HybridMemoryBackend {
                 "content": mem.content,
                 "importance": mem.importance,
                 "lifecycle_stage": format!("{:?}", mem.lifecycle_stage),
+                "scope": format!("{:?}", mem.scope),
                 "access_count": mem.access_count,
                 "tags": mem.tags,
                 "created_at": mem.created_at.to_rfc3339(),
@@ -142,6 +171,7 @@ impl HybridMemoryBackend {
                     "content": m.content,
                     "importance": m.importance,
                     "lifecycle_stage": format!("{:?}", m.lifecycle_stage),
+                    "scope": format!("{:?}", m.scope),
                     "access_count": m.access_count,
                     "tags": m.tags,
                     "created_at": m.created_at.to_rfc3339(),

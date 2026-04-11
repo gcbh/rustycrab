@@ -7,7 +7,9 @@ use rusqlite::params;
 use rustykrab_core::Result;
 use uuid::Uuid;
 
-use crate::types::{ExtractedFact, LifecycleStage, LinkType, Memory, MemoryChunk, MemoryLink};
+use crate::types::{
+    ExtractedFact, LifecycleStage, LinkType, Memory, MemoryChunk, MemoryLink, MemoryScope,
+};
 
 /// Abstract storage backend for the memory system.
 ///
@@ -15,6 +17,20 @@ use crate::types::{ExtractedFact, LifecycleStage, LinkType, Memory, MemoryChunk,
 /// allowing different backends (SQLite, PostgreSQL) to be swapped.
 #[async_trait]
 pub trait MemoryStorage: Send + Sync {
+    // ── FTS (keyword search) ───────────────────────────────────
+
+    /// Index a memory's content in the full-text search index.
+    async fn fts_index(&self, memory_id: Uuid, agent_id: Uuid, content: &str) -> Result<()>;
+
+    /// Search the FTS index for memories matching a query, scoped to an agent.
+    /// Returns (memory_id, rank) pairs sorted by relevance.
+    async fn fts_search(
+        &self,
+        query: &str,
+        agent_id: Uuid,
+        limit: usize,
+    ) -> Result<Vec<(Uuid, usize)>>;
+
     // ── Memory CRUD ─────────────────────────────────────────────
 
     /// Insert or update a memory record.
@@ -148,6 +164,24 @@ fn link_type_to_str(lt: LinkType) -> &'static str {
     }
 }
 
+fn scope_to_str(scope: MemoryScope) -> &'static str {
+    match scope {
+        MemoryScope::Session => "session",
+        MemoryScope::User => "user",
+        MemoryScope::Agent => "agent",
+        MemoryScope::Global => "global",
+    }
+}
+
+fn str_to_scope(s: &str) -> MemoryScope {
+    match s {
+        "session" => MemoryScope::Session,
+        "agent" => MemoryScope::Agent,
+        "global" => MemoryScope::Global,
+        _ => MemoryScope::User,
+    }
+}
+
 /// Encode a Vec<f32> embedding as little-endian bytes for SQLite BLOB storage.
 fn embedding_to_blob(v: &[f32]) -> Vec<u8> {
     v.iter().flat_map(|f| f.to_le_bytes()).collect()
@@ -221,6 +255,12 @@ impl SqliteMemoryStorage {
                 content         TEXT NOT NULL,
                 content_hash    TEXT NOT NULL,
 
+                -- Scoping
+                scope       TEXT NOT NULL DEFAULT 'user'
+                    CHECK (scope IN ('session','user','agent','global')),
+                session_id  TEXT,
+                user_id     TEXT,
+
                 -- Lifecycle
                 lifecycle_stage TEXT NOT NULL DEFAULT 'episodic'
                     CHECK (lifecycle_stage IN ('working','episodic','semantic','archival','tombstone')),
@@ -265,6 +305,10 @@ impl SqliteMemoryStorage {
                 ON memories(agent_id, created_at DESC);
             CREATE INDEX IF NOT EXISTS idx_memories_dedup
                 ON memories(agent_id, content_hash);
+            CREATE INDEX IF NOT EXISTS idx_memories_user
+                ON memories(user_id, scope) WHERE is_valid = 1;
+            CREATE INDEX IF NOT EXISTS idx_memories_session
+                ON memories(session_id) WHERE is_valid = 1;
 
             CREATE TABLE IF NOT EXISTS chunks (
                 id                      TEXT PRIMARY KEY,
@@ -306,6 +350,40 @@ impl SqliteMemoryStorage {
                 ON memory_links(source_id);
             CREATE INDEX IF NOT EXISTS idx_links_target
                 ON memory_links(target_id);
+
+            -- FTS5 index for keyword search (replaces in-memory BM25)
+            CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(
+                memory_id UNINDEXED,
+                agent_id UNINDEXED,
+                content,
+                tokenize='unicode61 remove_diacritics 2'
+            );
+
+            -- Knowledge graph (migrated from sled)
+            CREATE TABLE IF NOT EXISTS kg_entities (
+                id          TEXT PRIMARY KEY,
+                entity_type TEXT NOT NULL,
+                name        TEXT NOT NULL,
+                attributes  TEXT NOT NULL DEFAULT '{}',
+                created_at  TEXT NOT NULL,
+                updated_at  TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_kg_entities_name
+                ON kg_entities(name COLLATE NOCASE);
+            CREATE INDEX IF NOT EXISTS idx_kg_entities_type
+                ON kg_entities(entity_type);
+
+            CREATE TABLE IF NOT EXISTS kg_relations (
+                from_id       TEXT NOT NULL,
+                to_id         TEXT NOT NULL,
+                relation_type TEXT NOT NULL,
+                metadata      TEXT,
+                PRIMARY KEY (from_id, to_id, relation_type)
+            );
+            CREATE INDEX IF NOT EXISTS idx_kg_relations_from
+                ON kg_relations(from_id);
+            CREATE INDEX IF NOT EXISTS idx_kg_relations_to
+                ON kg_relations(to_id);
             ",
         )
         .map_err(storage_err)?;
@@ -314,7 +392,7 @@ impl SqliteMemoryStorage {
     }
 
     /// Helper: run a blocking closure on the connection inside spawn_blocking.
-    async fn with_conn<F, T>(&self, f: F) -> Result<T>
+    pub async fn with_conn<F, T>(&self, f: F) -> Result<T>
     where
         F: FnOnce(&rusqlite::Connection) -> Result<T> + Send + 'static,
         T: Send + 'static,
@@ -333,6 +411,9 @@ impl SqliteMemoryStorage {
 fn row_to_memory(row: &rusqlite::Row) -> rusqlite::Result<Memory> {
     let id_str: String = row.get("id")?;
     let agent_id_str: String = row.get("agent_id")?;
+    let scope_str: String = row.get("scope")?;
+    let session_id_str: Option<String> = row.get("session_id")?;
+    let user_id_str: Option<String> = row.get("user_id")?;
     let stage_str: String = row.get("lifecycle_stage")?;
     let importance_source_str: String = row.get("importance_source")?;
     let last_accessed_str: Option<String> = row.get("last_accessed_at")?;
@@ -351,6 +432,9 @@ fn row_to_memory(row: &rusqlite::Row) -> rusqlite::Result<Memory> {
         agent_id: Uuid::parse_str(&agent_id_str).unwrap_or_default(),
         content: row.get("content")?,
         content_hash: row.get("content_hash")?,
+        scope: str_to_scope(&scope_str),
+        session_id: session_id_str.and_then(|s| Uuid::parse_str(&s).ok()),
+        user_id: user_id_str.and_then(|s| Uuid::parse_str(&s).ok()),
         lifecycle_stage: str_to_lifecycle(&stage_str),
         importance: row.get("importance")?,
         importance_source: match importance_source_str.as_str() {
@@ -391,12 +475,82 @@ fn row_to_memory(row: &rusqlite::Row) -> rusqlite::Result<Memory> {
 
 #[async_trait]
 impl MemoryStorage for SqliteMemoryStorage {
+    async fn fts_index(&self, memory_id: Uuid, agent_id: Uuid, content: &str) -> Result<()> {
+        let mid = memory_id.to_string();
+        let aid = agent_id.to_string();
+        let text = content.to_string();
+        self.with_conn(move |conn| {
+            // Delete any existing entry for this memory (re-index safe).
+            conn.execute(
+                "DELETE FROM memories_fts WHERE memory_id = ?1",
+                params![mid],
+            )
+            .map_err(storage_err)?;
+            conn.execute(
+                "INSERT INTO memories_fts (memory_id, agent_id, content) VALUES (?1, ?2, ?3)",
+                params![mid, aid, text],
+            )
+            .map_err(storage_err)?;
+            Ok(())
+        })
+        .await
+    }
+
+    async fn fts_search(
+        &self,
+        query: &str,
+        agent_id: Uuid,
+        limit: usize,
+    ) -> Result<Vec<(Uuid, usize)>> {
+        let agent_str = agent_id.to_string();
+        let query = query.to_string();
+        self.with_conn(move |conn| {
+            // Tokenize query words and join with OR for broad matching.
+            let fts_query: String = query
+                .split(|c: char| !c.is_alphanumeric() && c != '_' && c != '-')
+                .filter(|w| w.len() >= 2)
+                .map(|w| format!("\"{w}\""))
+                .collect::<Vec<_>>()
+                .join(" OR ");
+
+            if fts_query.is_empty() {
+                return Ok(Vec::new());
+            }
+
+            let mut stmt = conn
+                .prepare(
+                    "SELECT memory_id, rank
+                     FROM memories_fts
+                     WHERE memories_fts MATCH ?1 AND agent_id = ?2
+                     ORDER BY rank
+                     LIMIT ?3",
+                )
+                .map_err(storage_err)?;
+
+            let rows = stmt
+                .query_map(params![fts_query, agent_str, limit as u32], |row| {
+                    let mid: String = row.get(0)?;
+                    Ok(Uuid::parse_str(&mid).unwrap_or_default())
+                })
+                .map_err(storage_err)?;
+
+            let mut results = Vec::new();
+            for (rank, row) in rows.enumerate() {
+                let id = row.map_err(storage_err)?;
+                results.push((id, rank));
+            }
+            Ok(results)
+        })
+        .await
+    }
+
     async fn upsert_memory(&self, memory: &Memory) -> Result<()> {
         let m = memory.clone();
         self.with_conn(move |conn| {
             conn.execute(
                 "INSERT INTO memories (
                     id, agent_id, content, content_hash,
+                    scope, session_id, user_id,
                     lifecycle_stage, importance, importance_source,
                     decay_rate, confidence, access_count,
                     last_accessed_at, last_relevant_at, created_at,
@@ -410,10 +564,14 @@ impl MemoryStorage for SqliteMemoryStorage {
                     ?8, ?9, ?10,
                     ?11, ?12, ?13,
                     ?14, ?15, ?16,
-                    ?17, ?18,
-                    ?19, ?20, ?21,
-                    ?22, ?23
+                    ?17, ?18, ?19,
+                    ?20, ?21,
+                    ?22, ?23, ?24,
+                    ?25, ?26
                 ) ON CONFLICT(id) DO UPDATE SET
+                    scope = excluded.scope,
+                    session_id = excluded.session_id,
+                    user_id = excluded.user_id,
                     lifecycle_stage = excluded.lifecycle_stage,
                     importance = excluded.importance,
                     importance_source = excluded.importance_source,
@@ -437,6 +595,9 @@ impl MemoryStorage for SqliteMemoryStorage {
                     m.agent_id.to_string(),
                     m.content,
                     m.content_hash,
+                    scope_to_str(m.scope),
+                    m.session_id.map(|u| u.to_string()),
+                    m.user_id.map(|u| u.to_string()),
                     lifecycle_to_str(m.lifecycle_stage),
                     m.importance,
                     match m.importance_source {
