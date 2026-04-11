@@ -112,6 +112,20 @@ impl HybridMemoryBackend {
         }))
     }
 
+    /// Finalize the current session, promoting all Working memories to Episodic.
+    pub async fn finalize_session(&self) -> rustykrab_core::Result<Value> {
+        let count = self
+            .system
+            .finalize_session(self.agent_id, self.session_id)
+            .await?;
+
+        Ok(json!({
+            "session_id": self.session_id.to_string(),
+            "promoted_to_episodic": count,
+            "status": "finalized",
+        }))
+    }
+
     /// List all valid memories for the current agent.
     pub async fn list(&self) -> rustykrab_core::Result<Value> {
         let memories = self

@@ -36,6 +36,14 @@ pub trait MemoryStorage: Send + Sync {
     /// List all valid memories for an agent in a given lifecycle stage.
     async fn list_by_stage(&self, agent_id: Uuid, stage: LifecycleStage) -> Result<Vec<Memory>>;
 
+    /// List all valid memories for a specific session and lifecycle stage.
+    async fn list_by_session_and_stage(
+        &self,
+        agent_id: Uuid,
+        session_id: Uuid,
+        stage: LifecycleStage,
+    ) -> Result<Vec<Memory>>;
+
     /// List all valid, retrievable memories for an agent.
     async fn list_retrievable(&self, agent_id: Uuid) -> Result<Vec<Memory>>;
 
@@ -540,6 +548,35 @@ impl MemoryStorage for SqliteMemoryStorage {
                 .map_err(storage_err)?;
             let rows = stmt
                 .query_map(params![agent_str, stage_str], row_to_memory)
+                .map_err(storage_err)?;
+            let mut results = Vec::new();
+            for row in rows {
+                results.push(row.map_err(storage_err)?);
+            }
+            Ok(results)
+        })
+        .await
+    }
+
+    async fn list_by_session_and_stage(
+        &self,
+        agent_id: Uuid,
+        session_id: Uuid,
+        stage: LifecycleStage,
+    ) -> Result<Vec<Memory>> {
+        let agent_str = agent_id.to_string();
+        let session_str = session_id.to_string();
+        let stage_str = lifecycle_to_str(stage).to_string();
+        self.with_conn(move |conn| {
+            let mut stmt = conn
+                .prepare(
+                    "SELECT * FROM memories
+                     WHERE agent_id = ?1 AND lifecycle_stage = ?2 AND is_valid = 1
+                       AND json_extract(metadata, '$.session_id') = ?3",
+                )
+                .map_err(storage_err)?;
+            let rows = stmt
+                .query_map(params![agent_str, stage_str, session_str], row_to_memory)
                 .map_err(storage_err)?;
             let mut results = Vec::new();
             for row in rows {

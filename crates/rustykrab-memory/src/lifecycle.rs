@@ -13,6 +13,7 @@ use crate::types::{LifecycleStage, LinkType, Memory, MemoryLink};
 /// Statistics from a lifecycle sweep operation.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct LifecycleSweepStats {
+    pub promoted_to_episodic: u32,
     pub promoted_to_semantic: u32,
     pub demoted_to_archival: u32,
     pub tombstoned: u32,
@@ -45,12 +46,34 @@ impl LifecycleManager {
 
     /// Run a full lifecycle sweep for an agent's memories.
     ///
-    /// 1. Promote: episodic → semantic (accessed ≥3×, older than 7 days).
-    /// 2. Demote: episodic → archival (effective score < threshold, idle > 30 days).
-    /// 3. Tombstone: archival → tombstone (idle > 180 days, low importance).
+    /// 1. Promote: working → episodic (idle > working_max_idle_minutes).
+    /// 2. Promote: episodic → semantic (accessed ≥3×, older than 7 days).
+    /// 3. Demote: episodic → archival (effective score < threshold, idle > 30 days).
+    /// 4. Tombstone: archival → tombstone (idle > 180 days, low importance).
     pub async fn sweep(&self, agent_id: Uuid) -> rustykrab_core::Result<LifecycleSweepStats> {
         let now = Utc::now();
         let mut stats = LifecycleSweepStats::default();
+
+        // ── Promote: working → episodic (stale safety net) ─────
+        let working = self
+            .storage
+            .list_by_stage(agent_id, LifecycleStage::Working)
+            .await?;
+
+        let working_threshold = Duration::minutes(self.config.working_max_idle_minutes as i64);
+        let mut working_promotions = Vec::new();
+
+        for mem in &working {
+            let idle = now - mem.last_accessed_at.unwrap_or(mem.created_at);
+            if idle >= working_threshold {
+                working_promotions.push((mem.id, LifecycleStage::Episodic));
+            }
+        }
+
+        if !working_promotions.is_empty() {
+            stats.promoted_to_episodic =
+                self.storage.batch_update_stages(&working_promotions).await?;
+        }
 
         // ── Promote: episodic → semantic ────────────────────────
         let episodic = self
@@ -116,6 +139,7 @@ impl LifecycleManager {
 
         info!(
             agent_id = %agent_id,
+            working_promoted = stats.promoted_to_episodic,
             promoted = stats.promoted_to_semantic,
             demoted = stats.demoted_to_archival,
             tombstoned = stats.tombstoned,
@@ -123,6 +147,42 @@ impl LifecycleManager {
         );
 
         Ok(stats)
+    }
+
+    /// Promote all Working memories for a session to Episodic.
+    ///
+    /// Call this when an agent session ends to consolidate working memory
+    /// into episodic memory. This is the primary Working→Episodic trigger;
+    /// the lifecycle sweep provides a safety net for orphaned sessions.
+    pub async fn finalize_session(
+        &self,
+        agent_id: Uuid,
+        session_id: Uuid,
+    ) -> rustykrab_core::Result<u32> {
+        let working = self
+            .storage
+            .list_by_session_and_stage(agent_id, session_id, LifecycleStage::Working)
+            .await?;
+
+        if working.is_empty() {
+            return Ok(0);
+        }
+
+        let promotions: Vec<(Uuid, LifecycleStage)> = working
+            .iter()
+            .map(|m| (m.id, LifecycleStage::Episodic))
+            .collect();
+
+        let count = self.storage.batch_update_stages(&promotions).await?;
+
+        info!(
+            agent_id = %agent_id,
+            session_id = %session_id,
+            promoted = count,
+            "session finalized: working → episodic"
+        );
+
+        Ok(count)
     }
 
     /// Detect near-duplicate memories and create links between them.
