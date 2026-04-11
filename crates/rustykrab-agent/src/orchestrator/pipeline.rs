@@ -147,9 +147,7 @@ impl OrchestrationPipeline {
         )
         .await
         .map_err(|_| {
-            rustykrab_core::Error::Internal(format!(
-                "model call timed out after {timeout_secs}s"
-            ))
+            rustykrab_core::Error::Internal(format!("model call timed out after {timeout_secs}s"))
         })??;
         let text = match response.message.content.as_text() {
             Some(t) => t.to_string(),

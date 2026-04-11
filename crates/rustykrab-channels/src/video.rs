@@ -157,9 +157,7 @@ impl VideoChannel {
 
     /// Run `hyperframes doctor` to verify the environment (Node >= 22, FFmpeg, Chrome).
     pub async fn check_environment(&self) -> Result<DoctorResult, String> {
-        let output = self
-            .run_npx(&["hyperframes", "doctor"], None)
-            .await?;
+        let output = self.run_npx(&["hyperframes", "doctor"], None).await?;
 
         let raw = String::from_utf8_lossy(&output.stdout).to_string();
         let stderr = String::from_utf8_lossy(&output.stderr).to_string();
@@ -212,9 +210,7 @@ impl VideoChannel {
         args.push("--template");
         args.push(template_val);
 
-        let init_result = self
-            .run_npx(&args, Some(&self.config.projects_dir))
-            .await;
+        let init_result = self.run_npx(&args, Some(&self.config.projects_dir)).await;
 
         match init_result {
             Ok(output) if output.status.success() => {
@@ -222,9 +218,8 @@ impl VideoChannel {
                 // Rename it to our UUID-based directory.
                 let created_dir = self.config.projects_dir.join(name);
                 if created_dir.exists() && created_dir != project_dir {
-                    std::fs::rename(&created_dir, &project_dir).map_err(|e| {
-                        format!("failed to rename project dir: {e}")
-                    })?;
+                    std::fs::rename(&created_dir, &project_dir)
+                        .map_err(|e| format!("failed to rename project dir: {e}"))?;
                 }
                 tracing::info!(
                     project_id = %project_id,
@@ -237,9 +232,7 @@ impl VideoChannel {
                 tracing::debug!("hyperframes CLI not available, creating project locally");
                 std::fs::create_dir_all(&project_dir)
                     .map_err(|e| format!("failed to create project dir: {e}"))?;
-                self.write_composition_html(
-                    &project_dir, name, width, height, duration, fps, &[],
-                )?;
+                self.write_composition_html(&project_dir, name, width, height, duration, fps, &[])?;
             }
         }
 
@@ -373,9 +366,7 @@ impl VideoChannel {
             }
         }
 
-        let render_output = self
-            .run_npx(&args, Some(&project.dir))
-            .await?;
+        let render_output = self.run_npx(&args, Some(&project.dir)).await?;
 
         if !render_output.status.success() {
             let stderr = String::from_utf8_lossy(&render_output.stderr);
@@ -530,11 +521,7 @@ impl VideoChannel {
     }
 
     /// Call an MCP tool (requires prior `connect_mcp`).
-    pub async fn call_mcp_tool(
-        &self,
-        name: &str,
-        arguments: Value,
-    ) -> Result<Value, String> {
+    pub async fn call_mcp_tool(&self, name: &str, arguments: Value) -> Result<Value, String> {
         let mcp_guard = self.mcp.lock().await;
         let client = mcp_guard
             .as_ref()
@@ -665,6 +652,7 @@ impl VideoChannel {
     }
 
     /// Generate an HTML composition file using hyperframes data attributes.
+    #[allow(clippy::too_many_arguments)]
     fn write_composition_html(
         &self,
         project_dir: &Path,

@@ -142,9 +142,8 @@ async fn main() -> anyhow::Result<()> {
     );
     let model_cache_dir = data_dir.join("models");
     std::fs::create_dir_all(&model_cache_dir)?;
-    let embedder = Arc::new(
-        FastEmbedder::new(model_cache_dir).expect("failed to initialize embedding model"),
-    );
+    let embedder =
+        Arc::new(FastEmbedder::new(model_cache_dir).expect("failed to initialize embedding model"));
     let memory_system = Arc::new(MemorySystem::new(
         MemoryConfig::default(),
         memory_storage,
@@ -156,13 +155,12 @@ async fn main() -> anyhow::Result<()> {
     let agent_id_path = data_dir.join("agent_id");
     let agent_id = if agent_id_path.exists() {
         let raw = std::fs::read_to_string(&agent_id_path)?;
-        Uuid::parse_str(raw.trim())
-            .unwrap_or_else(|_| {
-                tracing::warn!("corrupt agent_id file, generating new ID");
-                let id = Uuid::new_v4();
-                let _ = std::fs::write(&agent_id_path, id.to_string());
-                id
-            })
+        Uuid::parse_str(raw.trim()).unwrap_or_else(|_| {
+            tracing::warn!("corrupt agent_id file, generating new ID");
+            let id = Uuid::new_v4();
+            let _ = std::fs::write(&agent_id_path, id.to_string());
+            id
+        })
     } else {
         let id = Uuid::new_v4();
         std::fs::write(&agent_id_path, id.to_string())?;
@@ -204,9 +202,7 @@ async fn main() -> anyhow::Result<()> {
         tracing::info!("video communication channel enabled");
         Some(channel)
     } else {
-        tracing::info!(
-            "video channel disabled (set RUSTYKRAB_VIDEO=true to enable)"
-        );
+        tracing::info!("video channel disabled (set RUSTYKRAB_VIDEO=true to enable)");
         None
     };
 

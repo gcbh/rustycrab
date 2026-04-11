@@ -243,10 +243,8 @@ impl Tool for ProcessTool {
                     }))
                 } else {
                     Err(rustykrab_core::Error::ToolExecution(
-                        format!(
-                            "process {pid} was not spawned by this tool and cannot be stopped"
-                        )
-                        .into(),
+                        format!("process {pid} was not spawned by this tool and cannot be stopped")
+                            .into(),
                     ))
                 }
             }

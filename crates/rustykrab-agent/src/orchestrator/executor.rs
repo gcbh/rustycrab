@@ -174,6 +174,7 @@ impl ParallelExecutor {
 }
 
 /// Execute a single sub-task with its own focused context.
+#[allow(clippy::too_many_arguments)]
 async fn execute_sub_task(
     task: &SubTask,
     dep_context: &[String],
@@ -266,8 +267,7 @@ async fn execute_sub_task(
             }
         };
 
-        total_tokens +=
-            (response.usage.prompt_tokens + response.usage.completion_tokens) as u64;
+        total_tokens += (response.usage.prompt_tokens + response.usage.completion_tokens) as u64;
 
         // If the model wants to use tools, execute them and continue.
         if response.message.content.has_tool_calls() {

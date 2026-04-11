@@ -94,10 +94,7 @@ pub async fn origin_check_middleware(
     // Add CORS headers when the origin was validated.
     if let Some(origin) = allowed_origin {
         let headers = response.headers_mut();
-        headers.insert(
-            header::ACCESS_CONTROL_ALLOW_ORIGIN,
-            origin.parse().unwrap(),
-        );
+        headers.insert(header::ACCESS_CONTROL_ALLOW_ORIGIN, origin.parse().unwrap());
         headers.insert(
             header::ACCESS_CONTROL_ALLOW_METHODS,
             "GET, POST, PUT, DELETE, PATCH, OPTIONS".parse().unwrap(),

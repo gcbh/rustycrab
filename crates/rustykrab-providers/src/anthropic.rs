@@ -396,8 +396,8 @@ impl ModelProvider for AnthropicProvider {
                 let line = buffer[..newline_pos].trim_end().to_string();
                 buffer = buffer[newline_pos + 1..].to_string();
 
-                if line.starts_with("event: ") {
-                    current_event_type = line[7..].to_string();
+                if let Some(event_type) = line.strip_prefix("event: ") {
+                    current_event_type = event_type.to_string();
                 } else if let Some(data) = line.strip_prefix("data: ") {
                     match current_event_type.as_str() {
                         "message_start" => {

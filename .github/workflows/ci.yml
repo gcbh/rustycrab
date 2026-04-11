@@ -50,3 +50,25 @@ jobs:
       - uses: rustsec/audit-check@v2.0.0
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
+
+  # Gate job: add this as a required status check in branch protection
+  # to block merges when any CI job fails.
+  ci-pass:
+    name: CI Pass
+    if: always()
+    needs: [check, test, fmt, audit]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify all checks passed
+        run: |
+          if [[ "${{ needs.check.result }}" != "success" ||
+                "${{ needs.test.result }}" != "success" ||
+                "${{ needs.fmt.result }}" != "success" ||
+                "${{ needs.audit.result }}" != "success" ]]; then
+            echo "::error::One or more CI jobs failed"
+            echo "  check:  ${{ needs.check.result }}"
+            echo "  test:   ${{ needs.test.result }}"
+            echo "  fmt:    ${{ needs.fmt.result }}"
+            echo "  audit:  ${{ needs.audit.result }}"
+            exit 1
+          fi

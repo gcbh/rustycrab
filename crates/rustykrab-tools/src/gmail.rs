@@ -122,7 +122,7 @@ impl GmailTool {
             // Strip CRLF sequences to prevent IMAP command injection, then
             // escape inner double quotes so the IMAP command parses correctly
             // (e.g. query `from:"foo@bar.com"` becomes `X-GM-RAW "from:\"foo@bar.com\""`).
-            let sanitized_query = query.replace('\r', "").replace('\n', "").replace('\0', "");
+            let sanitized_query = query.replace(['\r', '\n', '\0'], "");
             let escaped_query = sanitized_query.replace('\\', "\\\\").replace('"', "\\\"");
             let uids = session
                 .uid_search(format!("X-GM-RAW \"{escaped_query}\""))
