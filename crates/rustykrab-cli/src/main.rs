@@ -574,42 +574,48 @@ fn epoch_millis() -> u64 {
         .as_millis() as u64
 }
 
-/// Per-chat state for tracking conversations and preventing concurrent runs.
+/// Per-chat (or per-thread in forum groups) state for tracking conversations
+/// and preventing concurrent runs. Keyed by `(chat_id, thread_id)` where
+/// `thread_id == 0` means a non-forum chat or the implicit "General" topic.
 struct ChatState {
     conv_id: Uuid,
-    /// True while an agent run is in progress for this chat.
+    /// True while an agent run is in progress for this chat/thread.
     busy: bool,
 }
 
 /// Background task: consume inbound Telegram messages and run the agent.
 ///
-/// Each Telegram chat_id gets its own persistent conversation. Messages
-/// for different chats are processed concurrently so one slow agent run
-/// doesn't block other users. Within a single chat, messages are serialized.
+/// Each `(chat_id, thread_id)` pair gets its own persistent conversation.
+/// Messages for different chats/threads are processed concurrently so one
+/// slow agent run doesn't block other users or topics. Within a single
+/// chat+thread, messages are serialized.
 async fn telegram_agent_loop(
     mut rx: mpsc::Receiver<ChannelMessage>,
     tg: Arc<TelegramChannel>,
     state: AppState,
 ) {
-    let chat_states: Arc<tokio::sync::Mutex<HashMap<i64, ChatState>>> =
+    let chat_states: Arc<tokio::sync::Mutex<HashMap<(i64, i64), ChatState>>> =
         Arc::new(tokio::sync::Mutex::new(HashMap::new()));
 
     while let Some(channel_msg) = rx.recv().await {
         let chat_id = channel_msg.chat_id;
+        let thread_id = channel_msg.thread_id;
+        let key = (chat_id, thread_id);
         let tg = tg.clone();
         let state = state.clone();
         let chat_states = chat_states.clone();
 
         tokio::spawn(async move {
-            // Check if this chat already has an agent run in progress.
+            // Check if this chat/thread already has an agent run in progress.
             {
                 let states = chat_states.lock().await;
-                if let Some(cs) = states.get(&chat_id) {
+                if let Some(cs) = states.get(&key) {
                     if cs.busy {
                         let _ = tg
                             .send_text(
                                 chat_id,
                                 "I'm still working on your previous message. Please wait.",
+                                thread_id,
                             )
                             .await;
                         return;
@@ -621,7 +627,11 @@ async fn telegram_agent_loop(
             if channel_msg.reset {
                 {
                     let mut states = chat_states.lock().await;
-                    states.remove(&chat_id);
+                    states.remove(&key);
+                }
+                // Also clear the persisted mapping.
+                if let Err(e) = state.store.chat_map().remove(chat_id, thread_id) {
+                    tracing::warn!(chat_id, thread_id, "failed to remove chat map entry: {e}");
                 }
                 return;
             }
@@ -631,39 +641,87 @@ async fn telegram_agent_loop(
                 _ => return,
             };
 
-            // Get or create conversation.
+            // Get or create conversation. Check in-memory first, then DB,
+            // then create a brand new one.
             let conv_id = {
                 let mut states = chat_states.lock().await;
-                match states.get(&chat_id) {
+                match states.get(&key) {
                     Some(cs) => cs.conv_id,
-                    None => match state.store.conversations().create() {
-                        Ok(conv) => {
-                            let id = conv.id;
-                            states.insert(
-                                chat_id,
-                                ChatState {
-                                    conv_id: id,
-                                    busy: false,
-                                },
-                            );
-                            tracing::info!(chat_id, conv_id = %id, "created new conversation for Telegram chat");
-                            id
+                    None => {
+                        // Try the database (survives restarts).
+                        let db_id = state
+                            .store
+                            .chat_map()
+                            .lookup(chat_id, thread_id)
+                            .ok()
+                            .flatten();
+
+                        match db_id {
+                            Some(id) => {
+                                states.insert(
+                                    key,
+                                    ChatState {
+                                        conv_id: id,
+                                        busy: false,
+                                    },
+                                );
+                                tracing::info!(
+                                    chat_id, thread_id, conv_id = %id,
+                                    "restored conversation from database"
+                                );
+                                id
+                            }
+                            None => match state.store.conversations().create() {
+                                Ok(conv) => {
+                                    let id = conv.id;
+                                    states.insert(
+                                        key,
+                                        ChatState {
+                                            conv_id: id,
+                                            busy: false,
+                                        },
+                                    );
+                                    // Persist the mapping so it survives restarts.
+                                    if let Err(e) =
+                                        state.store.chat_map().upsert(chat_id, thread_id, id)
+                                    {
+                                        tracing::warn!(
+                                            chat_id,
+                                            thread_id,
+                                            "failed to persist chat map: {e}"
+                                        );
+                                    }
+                                    tracing::info!(
+                                        chat_id, thread_id, conv_id = %id,
+                                        "created new conversation for Telegram chat/thread"
+                                    );
+                                    id
+                                }
+                                Err(e) => {
+                                    tracing::error!(
+                                        chat_id,
+                                        thread_id,
+                                        "failed to create conversation: {e}"
+                                    );
+                                    let _ = tg
+                                        .send_text(
+                                            chat_id,
+                                            "Internal error — please try again.",
+                                            thread_id,
+                                        )
+                                        .await;
+                                    return;
+                                }
+                            },
                         }
-                        Err(e) => {
-                            tracing::error!(chat_id, "failed to create conversation: {e}");
-                            let _ = tg
-                                .send_text(chat_id, "Internal error — please try again.")
-                                .await;
-                            return;
-                        }
-                    },
+                    }
                 }
             };
 
-            // Mark chat as busy.
+            // Mark chat/thread as busy.
             {
                 let mut states = chat_states.lock().await;
-                if let Some(cs) = states.get_mut(&chat_id) {
+                if let Some(cs) = states.get_mut(&key) {
                     cs.busy = true;
                 }
             }
@@ -672,23 +730,24 @@ async fn telegram_agent_loop(
                 &state,
                 &tg,
                 chat_id,
+                thread_id,
                 conv_id,
                 channel_msg.message,
                 &user_text,
             )
             .await;
 
-            // Mark chat as no longer busy.
+            // Mark chat/thread as no longer busy.
             {
                 let mut states = chat_states.lock().await;
-                if let Some(cs) = states.get_mut(&chat_id) {
+                if let Some(cs) = states.get_mut(&key) {
                     cs.busy = false;
                 }
             }
 
-            // Send response back to Telegram.
-            if let Err(e) = tg.send_text(chat_id, &reply).await {
-                tracing::error!(chat_id, "failed to send Telegram reply: {e}");
+            // Send response back to Telegram (in the correct thread).
+            if let Err(e) = tg.send_text(chat_id, &reply, thread_id).await {
+                tracing::error!(chat_id, thread_id, "failed to send Telegram reply: {e}");
             }
         });
     }
@@ -701,6 +760,7 @@ async fn process_telegram_message(
     state: &AppState,
     tg: &Arc<TelegramChannel>,
     chat_id: i64,
+    thread_id: i64,
     conv_id: Uuid,
     message: rustykrab_core::types::Message,
     user_text: &str,
@@ -709,7 +769,7 @@ async fn process_telegram_message(
     let mut conv = match state.store.conversations().get(conv_id) {
         Ok(c) => c,
         Err(e) => {
-            tracing::error!(chat_id, %conv_id, "failed to load conversation: {e}");
+            tracing::error!(chat_id, thread_id, %conv_id, "failed to load conversation: {e}");
             return "Internal error — please try again.".to_string();
         }
     };
@@ -718,8 +778,8 @@ async fn process_telegram_message(
     conv.messages.push(message);
     conv.updated_at = Utc::now();
 
-    // Send initial typing indicator.
-    let _ = tg.send_typing(chat_id).await;
+    // Send initial typing indicator (scoped to forum thread if applicable).
+    let _ = tg.send_typing(chat_id, thread_id).await;
 
     // Spawn a background task to keep re-sending typing indicators
     // while the agent is working.
@@ -732,7 +792,7 @@ async fn process_telegram_message(
             if !typing_flag.load(std::sync::atomic::Ordering::Relaxed) {
                 break;
             }
-            let _ = tg_typing.send_typing(chat_id).await;
+            let _ = tg_typing.send_typing(chat_id, thread_id).await;
         }
     });
 
@@ -878,7 +938,9 @@ async fn job_executor_loop(store: rustykrab_store::Store, state: AppState) {
                     Some("telegram") => {
                         if let (Some(tg), Some(cid)) = (&state.telegram, &chat_id) {
                             if let Ok(chat_id_num) = cid.parse::<i64>() {
-                                if let Err(e) = tg.send_text(chat_id_num, &response_text).await {
+                                // Scheduled jobs don't have thread context;
+                                // messages go to the "General" topic in forum groups.
+                                if let Err(e) = tg.send_text(chat_id_num, &response_text, 0).await {
                                     tracing::error!(job_id = %job_id, "failed to send scheduled job result to Telegram: {e}");
                                 }
                             } else {
