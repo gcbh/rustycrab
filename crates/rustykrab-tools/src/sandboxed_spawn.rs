@@ -79,7 +79,10 @@ pub fn apply_resource_limits(max_memory_bytes: u64, max_cpu_secs: u64) -> io::Re
 /// - Basic process operations needed by the Python runtime
 /// - Network access is always denied
 #[cfg(target_os = "macos")]
-pub fn generate_seatbelt_profile(sandbox_dir: &std::path::Path, _python_path: &std::path::Path) -> String {
+pub fn generate_seatbelt_profile(
+    sandbox_dir: &std::path::Path,
+    _python_path: &std::path::Path,
+) -> String {
     let sandbox_dir = sandbox_dir.to_string_lossy();
 
     // Use a permissive-by-default profile that only denies network access
