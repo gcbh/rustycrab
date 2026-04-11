@@ -559,9 +559,10 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// How long the agent can go without emitting any event (text delta,
-/// tool start/end, etc.) before we consider it stalled.
-const HEARTBEAT_TIMEOUT_SECS: u64 = 300; // 5 minutes
+/// How long the Telegram agent can go without emitting any event (text delta,
+/// tool start/end, etc.) before we consider it stalled. Longer than the web
+/// frontend since Telegram execution is fully async.
+const HEARTBEAT_TIMEOUT_SECS: u64 = 1800; // 30 minutes
 
 /// How often to resend the "typing" indicator while the agent is working.
 /// Telegram's typing indicator expires after ~5 seconds.
