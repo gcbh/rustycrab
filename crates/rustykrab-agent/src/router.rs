@@ -119,13 +119,8 @@ impl HarnessRouter {
             TaskType::Research => HarnessProfile::research(),
             TaskType::Creative => HarnessProfile::creative(),
             TaskType::Planning => {
-                // Planning uses the research profile with a task_type override.
                 let mut p = HarnessProfile::research();
                 p.name = "planning".to_string();
-                p.task_type = TaskType::Planning;
-                p.agent_description = "a methodical planning assistant. You break complex \
-                    problems into actionable steps and identify dependencies."
-                    .to_string();
                 p
             }
             TaskType::General => self.base.clone(),

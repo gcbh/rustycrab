@@ -72,18 +72,8 @@ pub struct AgentConfig {
     pub max_consecutive_errors: usize,
     /// Maximum retries per failed tool call.
     pub max_tool_retries: u32,
-    /// Estimated max context tokens for the model (used for budget calculations).
-    /// Defaults to 128k which works for Claude and large Qwen models.
+    /// Estimated max context tokens for the model.
     pub max_context_tokens: usize,
-    /// Fraction of context reserved for the conversation summary (0.0–1.0).
-    /// The remaining budget is for recent messages + model response.
-    /// Default 0.20 (20%) — enough for a rich summary without crowding live context.
-    pub summary_budget_ratio: f64,
-    /// Fraction of context reserved for the model's response.
-    /// Default 0.15 (15%) — leaves room for a substantial reply.
-    pub response_reserve_ratio: f64,
-    /// Number of recent assistant messages to always preserve during truncation.
-    pub keep_last_assistants: usize,
 }
 
 impl Default for AgentConfig {
@@ -94,9 +84,6 @@ impl Default for AgentConfig {
             max_consecutive_errors: 3,
             max_tool_retries: 2,
             max_context_tokens: 128_000,
-            summary_budget_ratio: 0.20,
-            response_reserve_ratio: 0.15,
-            keep_last_assistants: 3,
         }
     }
 }
@@ -105,10 +92,6 @@ impl Default for AgentConfig {
 /// Used for auto-persisting turns to memory.
 pub type OnMessageCallback = Arc<dyn Fn(&Message) + Send + Sync>;
 
-/// Callback invoked with messages about to be dropped from context.
-/// Used for archival preservation before truncation.
-pub type OnTruncateCallback = Arc<dyn Fn(Vec<Message>) + Send + Sync>;
-
 /// Runs the agent loop: send conversation to model, execute tool calls, repeat.
 ///
 /// Improvements over a basic loop:
@@ -116,7 +99,6 @@ pub type OnTruncateCallback = Arc<dyn Fn(Vec<Message>) + Send + Sync>;
 ///   requests them (e.g. Anthropic's parallel tool use)
 /// - **Retry with reflection**: on tool errors, feeds the error back to the
 ///   model so it can self-correct rather than blindly retrying
-/// - **Memory**: summarizes older messages to keep context within limits
 pub struct AgentRunner {
     provider: Arc<dyn ModelProvider>,
     tools: Vec<Arc<dyn Tool>>,
@@ -124,7 +106,6 @@ pub struct AgentRunner {
     config: AgentConfig,
     tracer: ExecutionTracer,
     on_message: Option<OnMessageCallback>,
-    on_truncate: Option<OnTruncateCallback>,
 }
 
 impl AgentRunner {
@@ -140,7 +121,6 @@ impl AgentRunner {
             config: AgentConfig::default(),
             tracer: ExecutionTracer::new(),
             on_message: None,
-            on_truncate: None,
         }
     }
 
@@ -153,13 +133,6 @@ impl AgentRunner {
     /// Used to auto-persist conversation turns to the memory system.
     pub fn with_on_message(mut self, callback: OnMessageCallback) -> Self {
         self.on_message = Some(callback);
-        self
-    }
-
-    /// Set a callback invoked with messages about to be truncated from context.
-    /// Used for archival preservation before dropping messages.
-    pub fn with_on_truncate(mut self, callback: OnTruncateCallback) -> Self {
-        self.on_truncate = Some(callback);
         self
     }
 
@@ -177,7 +150,6 @@ impl AgentRunner {
             return Err(Error::Auth("session has expired".into()));
         }
 
-        // Create a per-run tracer to prevent cross-session data leaks (H8)
         let tracer = ExecutionTracer::new();
 
         let schemas: Vec<ToolSchema> = self
@@ -188,13 +160,11 @@ impl AgentRunner {
             .collect();
 
         let mut consecutive_errors = 0;
-        let mut context_flush_injected = false;
         let mut soft_warning_injected = false;
 
         for iteration in 0..self.config.max_iterations {
             tracer.record_iteration();
 
-            // Check session expiry on each iteration (not just at start)
             if session.is_expired() {
                 return Err(Error::Auth("session expired during execution".into()));
             }
@@ -205,48 +175,21 @@ impl AgentRunner {
                 "agent loop iteration"
             );
 
-            // Soft iteration warning: nudge the agent to save progress.
+            // Soft iteration warning.
             if self.config.soft_iteration_warning > 0
                 && iteration == self.config.soft_iteration_warning
                 && !soft_warning_injected
             {
                 soft_warning_injected = true;
-                tracing::info!(iteration, "injecting soft iteration warning");
                 conv.messages.push(Message {
                     id: Uuid::new_v4(),
                     role: Role::System,
                     content: MessageContent::Text(format!(
-                        "[Harness warning] You have used {iteration} of {} iterations. \
-                         Save any critical progress using memory_save now. \
-                         Focus on completing the most important remaining work.",
+                        "[Warning: {iteration}/{} iterations used.]",
                         self.config.max_iterations
                     )),
                     created_at: Utc::now(),
                 });
-            }
-
-            // Pre-truncation memory flush: warn the agent before dropping context.
-            if self.should_warn_context(conv) && !context_flush_injected {
-                context_flush_injected = true;
-                tracing::info!("injecting pre-truncation memory flush prompt");
-                conv.messages.push(Message {
-                    id: Uuid::new_v4(),
-                    role: Role::System,
-                    content: MessageContent::Text(
-                        "[Harness warning] Context approaching limit. Save any critical \
-                         information using memory_save now — older messages will be \
-                         removed after your next response."
-                            .to_string(),
-                    ),
-                    created_at: Utc::now(),
-                });
-            }
-
-            // Sliding window: drop oldest messages when context exceeds budget.
-            if self.should_truncate(conv) {
-                self.truncate_oldest(conv);
-                context_flush_injected = false; // Reset so we warn again next time.
-                tracer.record_compression();
             }
 
             let llm_start = std::time::Instant::now();
@@ -266,53 +209,27 @@ impl AgentRunner {
                 "LLM call completed"
             );
 
-            // Extract self-classification tag from text responses and strip it.
-            let message = if let Some(text) = message.content.as_text() {
-                let (profile, cleaned) = extract_self_classification(text);
-                if let Some(ref p) = profile {
-                    conv.detected_profile = Some(p.clone());
-                }
-                if profile.is_some() && cleaned != text {
-                    Message {
-                        content: MessageContent::Text(cleaned),
-                        ..message
-                    }
-                } else {
-                    message
-                }
-            } else {
-                message
-            };
-
             conv.messages.push(message.clone());
             conv.updated_at = Utc::now();
 
-            // Auto-persist this turn to memory.
             if let Some(ref cb) = self.on_message {
                 cb(&message);
             }
 
-            // Handle tool calls (single or multi).
+            // Handle tool calls.
             if message.content.has_tool_calls() {
                 let calls = message.content.tool_calls();
-                let tool_names: Vec<&str> = calls.iter().map(|c| c.name.as_str()).collect();
                 tracing::info!(
                     iteration,
                     tool_count = calls.len(),
-                    tools = ?tool_names,
+                    tools = ?calls.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(),
                     "executing tool calls"
                 );
 
-                for call in &calls {
-                    tracing::info!(tool = %call.name, call_id = %call.id, "tool call started");
-                }
-
-                // Execute all tool calls in parallel, recording traces.
                 let results = self
                     .execute_tools_parallel_traced(calls, session, &tracer)
                     .await;
 
-                // Track errors for reflection.
                 let had_errors = results.iter().any(|(_, _, r)| {
                     if let Ok(tr) = r {
                         tr.output.get("error").is_some()
@@ -321,7 +238,6 @@ impl AgentRunner {
                     }
                 });
 
-                // Push all results as messages.
                 for (tool_name, call_id, result) in results {
                     let tool_msg = match result {
                         Ok(tr) => {
@@ -352,14 +268,6 @@ impl AgentRunner {
                 }
                 conv.updated_at = Utc::now();
 
-                // Inject trace-informed guidance if tools are failing.
-                if let Some(trace_guidance) = tracer.summary_for_prompt() {
-                    // Only inject trace context every few iterations to avoid noise.
-                    if iteration > 0 && iteration % 5 == 0 {
-                        self.inject_trace_context(conv, &trace_guidance);
-                    }
-                }
-
                 // Reflection on repeated errors.
                 if had_errors {
                     consecutive_errors += 1;
@@ -368,7 +276,7 @@ impl AgentRunner {
                             consecutive_errors,
                             "injecting reflection prompt after repeated errors"
                         );
-                        self.inject_reflection(conv, &tracer);
+                        self.inject_reflection(conv);
                         consecutive_errors = 0;
                     }
                 } else {
@@ -378,7 +286,7 @@ impl AgentRunner {
                 continue;
             }
 
-            // If model hit max_tokens, it may be truncated — let it continue.
+            // If model hit max_tokens, let it continue.
             if stop_reason == StopReason::MaxTokens {
                 tracing::warn!("model hit max tokens, prompting to continue");
                 conv.messages.push(Message {
@@ -394,9 +302,7 @@ impl AgentRunner {
             return Ok(());
         }
 
-        // Escalate to user instead of hard-failing: inject a summary prompt
-        // and let the model produce one final text response so the user gets
-        // a meaningful status update instead of an opaque error.
+        // Escalate to user.
         tracing::warn!(
             max_iterations = self.config.max_iterations,
             "iteration cap reached — escalating to user"
@@ -406,29 +312,18 @@ impl AgentRunner {
             role: Role::User,
             content: MessageContent::Text(format!(
                 "You have reached the iteration limit ({} iterations). \
-                 Please summarize what you have accomplished so far, what remains \
-                 incomplete, and what you would do next if given more iterations. \
-                 The user can then decide how to proceed.",
+                 Summarize what you accomplished and what remains.",
                 self.config.max_iterations
             )),
             created_at: Utc::now(),
         });
-        // Final LLM call with no tool schemas — forces a text-only response.
         let final_response = self.provider.chat(&conv.messages, &[]).await?;
         conv.messages.push(final_response.message);
         conv.updated_at = Utc::now();
         Ok(())
     }
 
-    /// Run the agent loop with streaming: text deltas are forwarded through
-    /// the callback as they arrive, and tool lifecycle events are emitted
-    /// so callers can show real-time progress.
-    ///
-    /// Each call creates a fresh ExecutionTracer to prevent cross-session
-    /// information leakage (H8).
-    ///
-    /// The callback must be `Send + Sync` because it may be invoked from
-    /// the provider's streaming internals on a different task.
+    /// Run the agent loop with streaming events.
     pub async fn run_streaming(
         &self,
         conv: &mut Conversation,
@@ -439,7 +334,6 @@ impl AgentRunner {
             return Err(Error::Auth("session has expired".into()));
         }
 
-        // Create a per-run tracer to prevent cross-session data leaks (H8)
         let tracer = ExecutionTracer::new();
 
         let schemas: Vec<ToolSchema> = self
@@ -450,62 +344,32 @@ impl AgentRunner {
             .collect();
 
         let mut consecutive_errors = 0;
-        let mut context_flush_injected = false;
         let mut soft_warning_injected = false;
 
         for iteration in 0..self.config.max_iterations {
             tracer.record_iteration();
 
-            // Check session expiry on each iteration (not just at start)
             if session.is_expired() {
                 return Err(Error::Auth("session expired during execution".into()));
             }
 
-            // Soft iteration warning: nudge the agent to save progress.
+            // Soft iteration warning.
             if self.config.soft_iteration_warning > 0
                 && iteration == self.config.soft_iteration_warning
                 && !soft_warning_injected
             {
                 soft_warning_injected = true;
-                tracing::info!(iteration, "injecting soft iteration warning");
                 conv.messages.push(Message {
                     id: Uuid::new_v4(),
                     role: Role::System,
                     content: MessageContent::Text(format!(
-                        "[Harness warning] You have used {iteration} of {} iterations. \
-                         Save any critical progress using memory_save now. \
-                         Focus on completing the most important remaining work.",
+                        "[Warning: {iteration}/{} iterations used.]",
                         self.config.max_iterations
                     )),
                     created_at: Utc::now(),
                 });
             }
 
-            // Pre-truncation memory flush: warn the agent before dropping context.
-            if self.should_warn_context(conv) && !context_flush_injected {
-                context_flush_injected = true;
-                tracing::info!("injecting pre-truncation memory flush prompt");
-                conv.messages.push(Message {
-                    id: Uuid::new_v4(),
-                    role: Role::System,
-                    content: MessageContent::Text(
-                        "[Harness warning] Context approaching limit. Save any critical \
-                         information using memory_save now — older messages will be \
-                         removed after your next response."
-                            .to_string(),
-                    ),
-                    created_at: Utc::now(),
-                });
-            }
-
-            // Sliding window: drop oldest messages when context exceeds budget.
-            if self.should_truncate(conv) {
-                self.truncate_oldest(conv);
-                context_flush_injected = false; // Reset so we warn again next time.
-                tracer.record_compression();
-            }
-
-            // Use chat_stream so text deltas are forwarded in real time.
             let stream_callback = |event: StreamEvent| {
                 if let StreamEvent::TextDelta(delta) = event {
                     on_event(AgentEvent::TextDelta(delta));
@@ -532,28 +396,9 @@ impl AgentRunner {
                 "LLM call completed"
             );
 
-            // Extract self-classification tag from text responses and strip it.
-            let message = if let Some(text) = message.content.as_text() {
-                let (profile, cleaned) = extract_self_classification(text);
-                if let Some(ref p) = profile {
-                    conv.detected_profile = Some(p.clone());
-                }
-                if profile.is_some() && cleaned != text {
-                    Message {
-                        content: MessageContent::Text(cleaned),
-                        ..message
-                    }
-                } else {
-                    message
-                }
-            } else {
-                message
-            };
-
             conv.messages.push(message.clone());
             conv.updated_at = Utc::now();
 
-            // Auto-persist this turn to memory.
             if let Some(ref cb) = self.on_message {
                 cb(&message);
             }
@@ -561,17 +406,14 @@ impl AgentRunner {
             // Handle tool calls.
             if message.content.has_tool_calls() {
                 let calls = message.content.tool_calls();
-                let tool_names: Vec<&str> = calls.iter().map(|c| c.name.as_str()).collect();
                 tracing::info!(
                     iteration,
                     tool_count = calls.len(),
-                    tools = ?tool_names,
+                    tools = ?calls.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(),
                     "executing tool calls"
                 );
 
-                // Emit start events.
                 for call in &calls {
-                    tracing::info!(tool = %call.name, call_id = %call.id, "tool call started");
                     on_event(AgentEvent::ToolCallStart {
                         tool_name: call.name.clone(),
                         call_id: call.id.clone(),
@@ -628,21 +470,11 @@ impl AgentRunner {
                 }
                 conv.updated_at = Utc::now();
 
-                if let Some(trace_guidance) = tracer.summary_for_prompt() {
-                    if iteration > 0 && iteration % 5 == 0 {
-                        self.inject_trace_context(conv, &trace_guidance);
-                    }
-                }
-
                 if had_errors {
                     consecutive_errors += 1;
                     if consecutive_errors >= self.config.max_consecutive_errors {
-                        tracing::warn!(
-                            consecutive_errors,
-                            "injecting reflection prompt after repeated errors"
-                        );
                         on_event(AgentEvent::Reflecting);
-                        self.inject_reflection(conv, &tracer);
+                        self.inject_reflection(conv);
                         consecutive_errors = 0;
                     }
                 } else {
@@ -653,7 +485,6 @@ impl AgentRunner {
             }
 
             if stop_reason == StopReason::MaxTokens {
-                tracing::warn!("model hit max tokens, prompting to continue");
                 conv.messages.push(Message {
                     id: Uuid::new_v4(),
                     role: Role::User,
@@ -663,24 +494,17 @@ impl AgentRunner {
                 continue;
             }
 
-            // Text response — done.
             on_event(AgentEvent::Done);
             return Ok(());
         }
 
-        // Escalate to user instead of hard-failing.
-        tracing::warn!(
-            max_iterations = self.config.max_iterations,
-            "iteration cap reached — escalating to user"
-        );
+        // Escalate to user.
         conv.messages.push(Message {
             id: Uuid::new_v4(),
             role: Role::User,
             content: MessageContent::Text(format!(
                 "You have reached the iteration limit ({} iterations). \
-                 Please summarize what you have accomplished so far, what remains \
-                 incomplete, and what you would do next if given more iterations. \
-                 The user can then decide how to proceed.",
+                 Summarize what you accomplished and what remains.",
                 self.config.max_iterations
             )),
             created_at: Utc::now(),
@@ -803,22 +627,8 @@ impl AgentRunner {
         results
     }
 
-    /// Inject trace-informed context so the model can adapt its strategy.
-    fn inject_trace_context(&self, conv: &mut Conversation, trace_summary: &str) {
-        conv.messages.push(Message {
-            id: Uuid::new_v4(),
-            role: Role::System,
-            content: MessageContent::Text(format!("[Harness observation]\n{trace_summary}")),
-            created_at: Utc::now(),
-        });
-    }
-
-    /// Inject a detailed reflection prompt when the agent hits repeated errors.
-    ///
-    /// Extracts recent error details from the conversation and tracer so the
-    /// model gets specific, actionable feedback instead of a generic nudge.
-    fn inject_reflection(&self, conv: &mut Conversation, tracer: &ExecutionTracer) {
-        // Collect recent tool errors from the conversation tail.
+    /// Inject a reflection prompt when the agent hits repeated errors.
+    fn inject_reflection(&self, conv: &mut Conversation) {
         let mut recent_errors: Vec<String> = Vec::new();
         for msg in conv.messages.iter().rev().take(10) {
             if let MessageContent::ToolResult(tr) = &msg.content {
@@ -833,30 +643,14 @@ impl AgentRunner {
             }
         }
 
-        let mut text =
-            String::from("[Harness observation] Multiple consecutive tool calls have failed.\n");
-
+        let mut text = String::from("[Warning] Multiple consecutive tool calls have failed.");
         if !recent_errors.is_empty() {
-            text.push_str("Recent errors:\n");
+            text.push_str(" Recent errors:");
             for (i, err) in recent_errors.iter().enumerate() {
-                text.push_str(&format!("  {}. {}\n", i + 1, err));
+                text.push_str(&format!(" {}. {}", i + 1, err));
             }
         }
-
-        // Include tracer summary if available.
-        if let Some(trace_summary) = tracer.summary_for_prompt() {
-            text.push_str(&format!("\n{trace_summary}\n"));
-        }
-
-        text.push_str(
-            "\nDo NOT retry the same approach. Consider:\n\
-             - Using a different tool entirely\n\
-             - Trying different arguments or file paths\n\
-             - Breaking the problem into smaller steps\n\
-             - Checking your assumptions (paths, names, formats)\n\
-             Continue working on the task using tools — do not respond with \
-             only text while the task is incomplete.",
-        );
+        text.push_str(" Try a different approach.");
 
         conv.messages.push(Message {
             id: Uuid::new_v4(),
@@ -865,201 +659,6 @@ impl AgentRunner {
             created_at: Utc::now(),
         });
     }
-
-    /// Estimate token count for a string using the 4-chars-per-token heuristic.
-    /// This is intentionally conservative — slightly over-counting is safer
-    /// than running into a context limit mid-generation.
-    fn estimate_tokens(text: &str) -> usize {
-        // ~4 chars per token for English; ~3 for code-heavy content.
-        // We use 3.5 as a middle ground that errs on the safe side.
-        (text.len() as f64 / 3.5).ceil() as usize
-    }
-
-    /// Estimate total token usage of all messages in a conversation.
-    fn estimate_conversation_tokens(conv: &Conversation) -> usize {
-        let mut total = 0;
-        if let Some(ref summary) = conv.summary {
-            total += Self::estimate_tokens(summary);
-        }
-        for msg in &conv.messages {
-            total += match &msg.content {
-                MessageContent::Text(t) => Self::estimate_tokens(t),
-                MessageContent::ToolCall(tc) => {
-                    Self::estimate_tokens(&tc.name)
-                        + Self::estimate_tokens(&tc.arguments.to_string())
-                }
-                MessageContent::ToolResult(tr) => Self::estimate_tokens(&tr.output.to_string()),
-                MessageContent::MultiToolCall(calls) => calls
-                    .iter()
-                    .map(|tc| {
-                        Self::estimate_tokens(&tc.name)
-                            + Self::estimate_tokens(&tc.arguments.to_string())
-                    })
-                    .sum(),
-            };
-            // Per-message overhead (role tokens, formatting).
-            total += 4;
-        }
-        total
-    }
-
-    /// The token budget available for live messages (everything except
-    /// the summary and the response reserve).
-    fn live_message_budget(&self) -> usize {
-        let total = self.config.max_context_tokens;
-        let summary_budget = (total as f64 * self.config.summary_budget_ratio) as usize;
-        let response_budget = (total as f64 * self.config.response_reserve_ratio) as usize;
-        total
-            .saturating_sub(summary_budget)
-            .saturating_sub(response_budget)
-    }
-
-    /// Determine whether the conversation needs truncation.
-    fn should_truncate(&self, conv: &Conversation) -> bool {
-        let estimated = Self::estimate_conversation_tokens(conv);
-        let budget = self.live_message_budget();
-        estimated > (budget as f64 * 0.85) as usize
-    }
-
-    /// Early warning: context is approaching the truncation threshold.
-    /// Fires at 75% of budget so the agent has a chance to save state
-    /// before the 85% hard truncation kicks in.
-    fn should_warn_context(&self, conv: &Conversation) -> bool {
-        let estimated = Self::estimate_conversation_tokens(conv);
-        let budget = self.live_message_budget();
-        estimated > (budget as f64 * 0.75) as usize
-    }
-
-    /// Sliding window truncation: drop oldest messages to stay within
-    /// the context budget.
-    ///
-    /// Keeps the system message at index 0 (if present), guarantees the
-    /// last `keep_last_assistants` assistant messages survive, and retains
-    /// ~60% of the live budget worth of recent messages.
-    fn truncate_oldest(&self, conv: &mut Conversation) {
-        let budget = self.live_message_budget();
-        let target = (budget as f64 * 0.60) as usize;
-        let mut keep_tokens = 0;
-        let mut keep_from = conv.messages.len();
-
-        // Find the index of the Nth-from-last assistant message so we
-        // guarantee at least `keep_last_assistants` survive truncation.
-        let min_keep_idx = if self.config.keep_last_assistants > 0 {
-            let mut assistant_count = 0;
-            let mut idx = conv.messages.len();
-            for (i, msg) in conv.messages.iter().enumerate().rev() {
-                if msg.role == Role::Assistant {
-                    assistant_count += 1;
-                    if assistant_count >= self.config.keep_last_assistants {
-                        idx = i;
-                        break;
-                    }
-                }
-            }
-            idx
-        } else {
-            conv.messages.len()
-        };
-
-        for (i, msg) in conv.messages.iter().enumerate().rev() {
-            let msg_tokens = match &msg.content {
-                MessageContent::Text(t) => Self::estimate_tokens(t),
-                MessageContent::ToolCall(tc) => {
-                    Self::estimate_tokens(&tc.name)
-                        + Self::estimate_tokens(&tc.arguments.to_string())
-                }
-                MessageContent::ToolResult(tr) => Self::estimate_tokens(&tr.output.to_string()),
-                MessageContent::MultiToolCall(calls) => calls
-                    .iter()
-                    .map(|tc| {
-                        Self::estimate_tokens(&tc.name)
-                            + Self::estimate_tokens(&tc.arguments.to_string())
-                    })
-                    .sum(),
-            } + 4;
-
-            if keep_tokens + msg_tokens > target {
-                keep_from = i + 1;
-                break;
-            }
-            keep_tokens += msg_tokens;
-            keep_from = i;
-        }
-
-        // Ensure we keep at least `keep_last_assistants` assistant messages.
-        if keep_from > min_keep_idx {
-            keep_from = min_keep_idx;
-        }
-
-        // Don't truncate if there's almost nothing to drop.
-        if keep_from <= 2 {
-            return;
-        }
-
-        // Preserve the system message at index 0 if present.
-        let system_msg = if conv
-            .messages
-            .first()
-            .map(|m| m.role == Role::System)
-            .unwrap_or(false)
-        {
-            Some(conv.messages[0].clone())
-        } else {
-            None
-        };
-
-        // Notify callback with messages about to be dropped so they can
-        // be persisted to archival memory before removal.
-        let start = if system_msg.is_some() { 1 } else { 0 };
-        if let Some(ref cb) = self.on_truncate {
-            let to_archive: Vec<Message> = conv.messages[start..keep_from].to_vec();
-            if !to_archive.is_empty() {
-                cb(to_archive);
-            }
-        }
-
-        let dropped = keep_from;
-        conv.messages = conv.messages.split_off(keep_from);
-
-        // Re-insert the system message at the front.
-        if let Some(sys) = system_msg {
-            conv.messages.insert(0, sys);
-        }
-
-        tracing::info!(
-            dropped,
-            kept = conv.messages.len(),
-            "sliding window truncated oldest messages"
-        );
-    }
-}
-
-/// Sanitize and truncate error messages before they flow into the conversation.
-/// This prevents internal path and stack trace leakage to the model/client.
-/// Takes only the first line (no stack traces) and truncates to 200 chars.
-/// Extract `[PROFILE: xxx]` tag from the first line of model output.
-/// Returns the profile and the text with the tag line stripped.
-fn extract_self_classification(text: &str) -> (Option<String>, String) {
-    let trimmed = text.trim_start();
-    let first_line = trimmed.lines().next().unwrap_or("");
-
-    // Extract [PROFILE: xxx]
-    if let Some(start) = first_line.find("[PROFILE:") {
-        if let Some(end) = first_line[start + 9..].find(']') {
-            let val = first_line[start + 9..start + 9 + end].trim().to_lowercase();
-            if matches!(
-                val.as_str(),
-                "coding" | "research" | "creative" | "planning" | "general"
-            ) {
-                let remaining = trimmed.lines().skip(1).collect::<Vec<_>>().join("\n");
-                let remaining = remaining.trim_start().to_string();
-                tracing::info!(profile = %val, "model self-classified");
-                return (Some(val), remaining);
-            }
-        }
-    }
-
-    (None, text.to_string())
 }
 
 fn sanitize_error(e: &str) -> String {

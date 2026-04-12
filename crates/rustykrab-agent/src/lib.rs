@@ -1,18 +1,15 @@
 pub mod harness;
-pub mod orchestrator;
 pub mod rlm;
 pub mod router;
 mod runner;
 pub mod sandbox;
 pub mod trace;
+pub mod voting;
 
 pub use harness::{HarnessProfile, TaskType};
-pub use orchestrator::{
-    ConsistencyVoter, Decomposer, OrchestrationPipeline, ParallelExecutor, PipelineResult,
-    RefinementLoop, Synthesizer,
-};
 pub use rlm::RecursiveExecutor;
 pub use router::HarnessRouter;
 pub use runner::{AgentConfig, AgentEvent, AgentRunner};
 pub use sandbox::{NoSandbox, ProcessSandbox, Sandbox, SandboxPolicy};
 pub use trace::{ExecutionTracer, ToolStats, ToolTrace};
+pub use voting::ConsistencyVoter;

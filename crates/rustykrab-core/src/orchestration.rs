@@ -1,113 +1,20 @@
-//! Types for the recursive agentic orchestration layer.
-//!
-//! These types define the pipeline stages, task complexity levels,
-//! and intermediate results that flow through the orchestration system.
+//! Types for orchestration: RLM context management and self-consistency voting.
 
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-/// How complex a task is — determines which pipeline stages to run.
+/// How complex a task is — used by the router for profile selection.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TaskComplexity {
-    /// Simple acknowledgment or lookup — direct response, no pipeline.
     Trivial,
-    /// Single tool call or straightforward answer.
     Simple,
-    /// Needs decomposition and parallel execution.
     Moderate,
-    /// Full pipeline: decompose + execute + synthesize + refine.
     Complex,
-    /// High-stakes or ambiguous: full pipeline + self-consistency voting.
     Critical,
 }
 
-/// Which stage of the orchestration pipeline a task is in.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum PipelineStage {
-    /// Breaking the request into atomic sub-tasks.
-    Decompose,
-    /// Executing sub-tasks in parallel.
-    Execute,
-    /// Aggregating results into a coherent response.
-    Synthesize,
-    /// Verifying consistency (optional).
-    Verify,
-    /// Self-refinement pass (optional).
-    Refine,
-}
-
-/// A sub-task produced by the decomposition stage.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SubTask {
-    /// Unique identifier for this sub-task.
-    pub id: Uuid,
-    /// The parent task or sub-task that spawned this one.
-    pub parent_id: Option<Uuid>,
-    /// Human-readable description of what to do.
-    pub description: String,
-    /// Optional tool to invoke for this sub-task.
-    pub tool_hint: Option<String>,
-    /// Whether this sub-task requires model reasoning (vs. pure tool call).
-    pub requires_reasoning: bool,
-    /// Maximum context tokens to allocate for this sub-task.
-    pub context_budget: usize,
-    /// Dependencies — IDs of sub-tasks that must complete first.
-    pub depends_on: Vec<Uuid>,
-}
-
-impl SubTask {
-    pub fn new(description: impl Into<String>) -> Self {
-        Self {
-            id: Uuid::new_v4(),
-            parent_id: None,
-            description: description.into(),
-            tool_hint: None,
-            requires_reasoning: true,
-            context_budget: 16384,
-            depends_on: Vec::new(),
-        }
-    }
-
-    pub fn with_parent(mut self, parent_id: Uuid) -> Self {
-        self.parent_id = Some(parent_id);
-        self
-    }
-
-    pub fn with_tool_hint(mut self, tool: impl Into<String>) -> Self {
-        self.tool_hint = Some(tool.into());
-        self.requires_reasoning = false;
-        self
-    }
-
-    pub fn with_context_budget(mut self, budget: usize) -> Self {
-        self.context_budget = budget;
-        self
-    }
-
-    pub fn with_dependency(mut self, dep_id: Uuid) -> Self {
-        self.depends_on.push(dep_id);
-        self
-    }
-}
-
-/// Result of executing a single sub-task.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SubTaskResult {
-    /// The sub-task this result belongs to.
-    pub task_id: Uuid,
-    /// The output text (possibly summarized).
-    pub output: String,
-    /// Whether execution succeeded.
-    pub success: bool,
-    /// Optional error message.
-    pub error: Option<String>,
-    /// Token usage for this sub-task.
-    pub tokens_used: usize,
-}
-
-/// Configuration for the orchestration pipeline.
+/// Configuration for the RLM module and self-consistency voting.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct OrchestrationConfig {
