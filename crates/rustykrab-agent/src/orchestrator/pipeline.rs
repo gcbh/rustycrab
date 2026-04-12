@@ -78,15 +78,28 @@ impl OrchestrationPipeline {
     /// The entire pipeline is wrapped in a timeout to prevent unbounded execution.
     /// A deadline is computed and threaded through to the executor so that tool
     /// retries can bail out early when the pipeline is about to time out.
+    ///
+    /// The configured `pipeline_timeout_secs` is treated as the base budget and
+    /// scaled by complexity: trivial/simple get 1×, moderate gets 2×, complex
+    /// gets 3×, and critical gets 4×.  This prevents complex tasks (which make
+    /// many sequential model calls) from being killed by a budget sized for
+    /// simple tasks.
     pub async fn run(
         &self,
         request: &str,
         complexity: TaskComplexity,
         context: Option<&str>,
     ) -> Result<PipelineResult> {
-        tracing::info!(?complexity, "running orchestration pipeline");
+        let multiplier = match complexity {
+            TaskComplexity::Trivial | TaskComplexity::Simple => 1,
+            TaskComplexity::Moderate => 2,
+            TaskComplexity::Complex => 3,
+            TaskComplexity::Critical => 4,
+        };
+        let timeout_secs = self.config.pipeline_timeout_secs * multiplier;
 
-        let timeout_secs = self.config.pipeline_timeout_secs;
+        tracing::info!(?complexity, timeout_secs, "running orchestration pipeline");
+
         let deadline = Instant::now() + std::time::Duration::from_secs(timeout_secs);
         let result = tokio::time::timeout(
             std::time::Duration::from_secs(timeout_secs),
