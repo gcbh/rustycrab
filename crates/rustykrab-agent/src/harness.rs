@@ -31,10 +31,6 @@ pub struct HarnessProfile {
     // --- Context budget ---
     /// Model's context window size in tokens.
     pub max_context_tokens: usize,
-    /// Fraction of context reserved for the conversation summary (0.0–1.0).
-    pub summary_budget_ratio: f64,
-    /// Fraction of context reserved for the model's response (0.0–1.0).
-    pub response_reserve_ratio: f64,
 }
 
 impl Default for HarnessProfile {
@@ -47,8 +43,6 @@ impl Default for HarnessProfile {
             max_consecutive_errors: 3,
             max_tool_retries: 2,
             max_context_tokens: 128_000,
-            summary_budget_ratio: 0.20,
-            response_reserve_ratio: 0.15,
         }
     }
 }
@@ -91,8 +85,6 @@ impl HarnessProfile {
             max_consecutive_errors: self.max_consecutive_errors,
             max_tool_retries: self.max_tool_retries,
             max_context_tokens: self.max_context_tokens,
-            summary_budget_ratio: self.summary_budget_ratio,
-            response_reserve_ratio: self.response_reserve_ratio,
         }
     }
 }

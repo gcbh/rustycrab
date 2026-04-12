@@ -81,16 +81,12 @@ async fn prepare_agent(
     // Resolve profile again for agent config (cheap — no LLM call on cache hit).
     let profile = state.profile_for(user_content).await;
 
-    let mut runner = AgentRunner::new(
+    let runner = AgentRunner::new(
         state.provider.clone(),
         state.tools.clone(),
         state.sandbox.clone(),
     )
     .with_config(profile.to_agent_config());
-
-    if let Some(ref cb) = state.on_truncate {
-        runner = runner.with_on_truncate(cb.clone());
-    }
 
     Ok((runner, session))
 }
