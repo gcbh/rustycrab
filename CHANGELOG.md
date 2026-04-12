@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-04-12
+
+- refactor: replace RLM text markers with REPL-style tool-based context exploration (#256)
+
 ## [1.4.12] - 2026-04-12
 
 - [feat] register Gmail credentials in secret registry (#346)
