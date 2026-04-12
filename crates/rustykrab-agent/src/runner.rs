@@ -8,7 +8,7 @@ use rustykrab_core::session::Session;
 use rustykrab_core::types::{
     Conversation, Message, MessageContent, Role, ToolCall, ToolResult, ToolSchema,
 };
-use rustykrab_core::{Error, Result, Tool, ToolErrorKind};
+use rustykrab_core::{Error, Result, SandboxRequirements, Tool, ToolErrorKind};
 use uuid::Uuid;
 
 use crate::sandbox::{Sandbox, SandboxPolicy};
@@ -814,16 +814,18 @@ async fn execute_single_tool(
 
     tracing::info!(tool = call.name, session = %session_id, "executing tool in sandbox");
 
-    let allow_net = capabilities.has(&Capability::HttpRequest);
+    // Ask the tool what sandbox capabilities it needs.
+    let requirements = tool.sandbox_requirements();
+
     let policy = SandboxPolicy {
-        allow_net,
         allow_fs_read: capabilities.has(&Capability::FileRead),
         allow_fs_write: capabilities.has(&Capability::FileWrite),
+        allow_net: capabilities.has(&Capability::HttpRequest),
         allow_spawn: capabilities.has(&Capability::ShellExec),
         // Network tools (net_scan, net_admin, net_audit) can take several
-        // minutes to sweep a subnet. Use a 5-minute timeout when network
-        // access is enabled; keep the default 30s for everything else.
-        timeout_secs: if allow_net {
+        // minutes to sweep a subnet. Use a 5-minute timeout when the tool
+        // actually needs network access; keep the default 30s for everything else.
+        timeout_secs: if requirements.needs_net {
             300
         } else {
             SandboxPolicy::default().timeout_secs
@@ -832,12 +834,12 @@ async fn execute_single_tool(
     };
 
     // Enforce sandbox policy BEFORE tool execution.
-    // Check that the tool's required capabilities match the policy.
-    enforce_sandbox_policy(&call.name, &policy)?;
+    // Check that the tool's declared requirements are permitted by the policy.
+    enforce_sandbox_policy(&call.name, &requirements, &policy)?;
 
     // Run sandbox enforcement check (validates the sandbox layer agrees)
     sandbox
-        .execute(&call.name, call.arguments.clone(), &policy)
+        .execute(&call.name, call.arguments.clone(), &requirements, &policy)
         .await
         .map_err(|e| Error::Auth(format!("sandbox denied tool '{}': {e}", call.name)))?;
 
@@ -875,80 +877,30 @@ async fn execute_single_tool(
 
 /// Enforce sandbox policy constraints before tool execution.
 ///
-/// Maps tool names to required capabilities and rejects calls
-/// that violate the policy. Each tool is checked against ALL
-/// capabilities it requires, not just the first match.
-fn enforce_sandbox_policy(tool_name: &str, policy: &SandboxPolicy) -> Result<()> {
-    let needs_fs_read = matches!(tool_name, "read" | "pdf" | "image");
-    let needs_fs_write = matches!(
-        tool_name,
-        "write" | "edit" | "apply_patch" | "tts" | "image_generate" | "skill_create" | "canvas"
-    );
-    let needs_spawn = matches!(tool_name, "exec" | "process" | "code_execution");
-    let needs_net = matches!(
-        tool_name,
-        "http_request"
-            | "http_session"
-            | "web_fetch"
-            | "web_search"
-            | "x_search"
-            | "browser"
-            | "gmail"
-            | "image_generate"
-            | "tts"
-            | "net_scan"
-            | "net_admin"
-            | "net_audit"
-    );
-    let is_known = needs_fs_read
-        || needs_fs_write
-        || needs_spawn
-        || needs_net
-        || matches!(
-            tool_name,
-            "memory_save"
-                | "memory_search"
-                | "memory_get"
-                | "memory_delete"
-                | "credential_read"
-                | "credential_write"
-                | "message"
-                | "gateway"
-                | "nodes"
-                | "cron"
-                | "subagents"
-                | "sessions_spawn"
-                | "sessions_send"
-                | "sessions_list"
-                | "sessions_yield"
-                | "sessions_history"
-                | "session_status"
-                | "session_manager"
-                | "agents_list"
-        );
-
-    if !is_known {
-        tracing::warn!(tool = tool_name, "unknown tool denied by sandbox policy");
-        return Err(Error::Auth(format!(
-            "tool '{tool_name}' is not recognized by sandbox policy and was denied"
-        )));
-    }
-    if needs_fs_read && !policy.allow_fs_read {
+/// Checks each tool's self-declared [`SandboxRequirements`] against the
+/// session's [`SandboxPolicy`]. No hardcoded tool-name allowlist — tools
+/// declare their own needs via [`Tool::sandbox_requirements`].
+fn enforce_sandbox_policy(
+    tool_name: &str,
+    requirements: &SandboxRequirements,
+    policy: &SandboxPolicy,
+) -> Result<()> {
+    if requirements.needs_fs_read && !policy.allow_fs_read {
         return Err(Error::Auth(format!(
             "tool '{tool_name}' requires filesystem read access, which is denied by policy"
         )));
     }
-    if needs_fs_write && !policy.allow_fs_write {
+    if requirements.needs_fs_write && !policy.allow_fs_write {
         return Err(Error::Auth(format!(
             "tool '{tool_name}' requires filesystem write access, which is denied by policy"
         )));
     }
-    if needs_spawn && !policy.allow_spawn {
+    if requirements.needs_spawn && !policy.allow_spawn {
         return Err(Error::Auth(format!(
             "tool '{tool_name}' requires process spawning, which is denied by policy"
         )));
     }
-    if needs_net && !policy.allow_net {
+    if requirements.needs_net && !policy.allow_net {
         return Err(Error::Auth(format!(
             "tool '{tool_name}' requires network access, which is denied by policy"
         )));

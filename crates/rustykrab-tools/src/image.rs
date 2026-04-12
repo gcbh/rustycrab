@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use rustykrab_core::types::ToolSchema;
-use rustykrab_core::{Result, Tool};
+use rustykrab_core::{Result, SandboxRequirements, Tool};
 use serde_json::{json, Value};
 
 /// Maximum image download size (50 MB).
@@ -36,6 +36,13 @@ impl Tool for ImageTool {
 
     fn description(&self) -> &str {
         "Analyze an image from a URL or file path and describe its contents."
+    }
+
+    fn sandbox_requirements(&self) -> SandboxRequirements {
+        SandboxRequirements {
+            needs_fs_read: true,
+            ..SandboxRequirements::default()
+        }
     }
 
     fn schema(&self) -> ToolSchema {

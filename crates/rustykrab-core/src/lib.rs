@@ -12,4 +12,4 @@ pub use error::{Error, Result, ToolError, ToolErrorKind};
 pub use model::ModelProvider;
 pub use orchestration::{OrchestrationConfig, RecursiveCall, TaskComplexity, VoteResult};
 pub use session::Session;
-pub use tool::Tool;
+pub use tool::{SandboxRequirements, Tool};

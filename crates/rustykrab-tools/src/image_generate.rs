@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use rustykrab_core::types::ToolSchema;
-use rustykrab_core::{Result, Tool};
+use rustykrab_core::{Result, SandboxRequirements, Tool};
 use serde_json::{json, Value};
 
 /// A built-in tool that generates images from text prompts using a configured API.
@@ -30,6 +30,14 @@ impl Tool for ImageGenerateTool {
 
     fn description(&self) -> &str {
         "Generate an image from a text prompt using a configured image generation API."
+    }
+
+    fn sandbox_requirements(&self) -> SandboxRequirements {
+        SandboxRequirements {
+            needs_fs_write: true,
+            needs_net: true,
+            ..SandboxRequirements::default()
+        }
     }
 
     fn available(&self) -> bool {

@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use rustykrab_core::types::ToolSchema;
-use rustykrab_core::{Result, Tool};
+use rustykrab_core::{Result, SandboxRequirements, Tool};
 use serde_json::{json, Value};
 use std::time::Duration;
 use tokio::time::timeout;
@@ -207,6 +207,13 @@ impl Tool for ExecTool {
 
     fn description(&self) -> &str {
         "Execute a shell command and return its output. Commands are validated against an allowlist."
+    }
+
+    fn sandbox_requirements(&self) -> SandboxRequirements {
+        SandboxRequirements {
+            needs_spawn: true,
+            ..SandboxRequirements::default()
+        }
     }
 
     fn schema(&self) -> ToolSchema {

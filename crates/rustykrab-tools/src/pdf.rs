@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use rustykrab_core::types::ToolSchema;
-use rustykrab_core::{Result, Tool};
+use rustykrab_core::{Result, SandboxRequirements, Tool};
 use serde_json::{json, Value};
 
 use crate::security;
@@ -51,6 +51,13 @@ impl Tool for PdfTool {
         "Extract text content from a PDF file. Supports locked/encrypted PDFs \
          with a password parameter. If pymupdf is not installed, it will fall \
          back to pdftotext or PyPDF2."
+    }
+
+    fn sandbox_requirements(&self) -> SandboxRequirements {
+        SandboxRequirements {
+            needs_fs_read: true,
+            ..SandboxRequirements::default()
+        }
     }
 
     fn schema(&self) -> ToolSchema {

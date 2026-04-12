@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use rustykrab_core::types::ToolSchema;
-use rustykrab_core::{Result, Tool};
+use rustykrab_core::{Result, SandboxRequirements, Tool};
 use serde_json::{json, Value};
 
 /// A built-in tool that searches X (Twitter) posts and returns matching results.
@@ -30,6 +30,13 @@ impl Tool for XSearchTool {
 
     fn description(&self) -> &str {
         "Search X (Twitter) posts and return matching results."
+    }
+
+    fn sandbox_requirements(&self) -> SandboxRequirements {
+        SandboxRequirements {
+            needs_net: true,
+            ..SandboxRequirements::default()
+        }
     }
 
     fn schema(&self) -> ToolSchema {

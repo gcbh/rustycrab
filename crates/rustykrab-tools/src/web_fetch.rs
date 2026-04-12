@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use rustykrab_core::types::ToolSchema;
-use rustykrab_core::{Error, Result, Tool};
+use rustykrab_core::{Error, Result, SandboxRequirements, Tool};
 use serde_json::{json, Value};
 
 use crate::security;
@@ -44,6 +44,13 @@ impl Tool for WebFetchTool {
     fn description(&self) -> &str {
         "Fetch a web page and return its content as clean, readable text with HTML stripped. \
          Use this to read articles, documentation, or any web page."
+    }
+
+    fn sandbox_requirements(&self) -> SandboxRequirements {
+        SandboxRequirements {
+            needs_net: true,
+            ..SandboxRequirements::default()
+        }
     }
 
     fn schema(&self) -> ToolSchema {

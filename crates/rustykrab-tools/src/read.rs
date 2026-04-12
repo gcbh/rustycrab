@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use rustykrab_core::error::ToolError;
 use rustykrab_core::types::ToolSchema;
-use rustykrab_core::{Result, Tool};
+use rustykrab_core::{Result, SandboxRequirements, Tool};
 use serde_json::{json, Value};
 
 use crate::security;
@@ -35,6 +35,13 @@ impl Tool for ReadTool {
 
     fn description(&self) -> &str {
         "Read the contents of a file at a given path."
+    }
+
+    fn sandbox_requirements(&self) -> SandboxRequirements {
+        SandboxRequirements {
+            needs_fs_read: true,
+            ..SandboxRequirements::default()
+        }
     }
 
     fn schema(&self) -> ToolSchema {

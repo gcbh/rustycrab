@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use rustykrab_core::types::ToolSchema;
-use rustykrab_core::{Result, Tool};
+use rustykrab_core::{Result, SandboxRequirements, Tool};
 use serde_json::{json, Value};
 
 /// Maximum TTS response size (100 MB).
@@ -36,6 +36,14 @@ impl Tool for TtsTool {
 
     fn description(&self) -> &str {
         "Convert text to speech audio using a configured TTS API."
+    }
+
+    fn sandbox_requirements(&self) -> SandboxRequirements {
+        SandboxRequirements {
+            needs_fs_write: true,
+            needs_net: true,
+            ..SandboxRequirements::default()
+        }
     }
 
     fn available(&self) -> bool {

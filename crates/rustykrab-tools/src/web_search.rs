@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use rustykrab_core::types::ToolSchema;
-use rustykrab_core::{Error, Result, Tool};
+use rustykrab_core::{Error, Result, SandboxRequirements, Tool};
 use serde_json::{json, Value};
 
 /// A tool that searches the web using DuckDuckGo and returns results.
@@ -38,6 +38,13 @@ impl Tool for WebSearchTool {
     fn description(&self) -> &str {
         "Search the web using DuckDuckGo and return a list of results with titles, \
          URLs, and snippets. Use this to find information, discover URLs, or research topics."
+    }
+
+    fn sandbox_requirements(&self) -> SandboxRequirements {
+        SandboxRequirements {
+            needs_net: true,
+            ..SandboxRequirements::default()
+        }
     }
 
     fn schema(&self) -> ToolSchema {
