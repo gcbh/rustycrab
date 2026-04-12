@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use rustykrab_core::types::ToolSchema;
-use rustykrab_core::{Error, Result, Tool};
+use rustykrab_core::{Error, Result, SandboxRequirements, Tool};
 use serde_json::{json, Value};
 use tokio::sync::Mutex;
 
@@ -65,6 +65,13 @@ impl Tool for HttpSessionTool {
          this tool maintains cookies across requests within a named session, enabling \
          login flows and authenticated web interactions. Use different session names \
          for different services."
+    }
+
+    fn sandbox_requirements(&self) -> SandboxRequirements {
+        SandboxRequirements {
+            needs_net: true,
+            ..SandboxRequirements::default()
+        }
     }
 
     fn schema(&self) -> ToolSchema {

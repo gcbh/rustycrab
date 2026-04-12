@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use rustykrab_core::types::ToolSchema;
-use rustykrab_core::{Result, Tool, ToolError};
+use rustykrab_core::{Result, SandboxRequirements, Tool, ToolError};
 use serde_json::{json, Value};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::time::Duration;
@@ -204,6 +204,13 @@ impl Tool for NetScanTool {
 
     fn description(&self) -> &str {
         "Discover devices and open ports on the local network. Restricted to private/link-local IP ranges."
+    }
+
+    fn sandbox_requirements(&self) -> SandboxRequirements {
+        SandboxRequirements {
+            needs_net: true,
+            ..SandboxRequirements::default()
+        }
     }
 
     fn schema(&self) -> ToolSchema {

@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use rustykrab_core::types::ToolSchema;
-use rustykrab_core::{Result, Tool};
+use rustykrab_core::{Result, SandboxRequirements, Tool};
 use serde_json::{json, Value};
 use std::net::{IpAddr, SocketAddr};
 use std::time::Duration;
@@ -235,6 +235,13 @@ impl Tool for NetAuditTool {
 
     fn description(&self) -> &str {
         "Security auditing for local network services. Grab banners, check TLS/SSL, and probe SSH configurations."
+    }
+
+    fn sandbox_requirements(&self) -> SandboxRequirements {
+        SandboxRequirements {
+            needs_net: true,
+            ..SandboxRequirements::default()
+        }
     }
 
     fn schema(&self) -> ToolSchema {

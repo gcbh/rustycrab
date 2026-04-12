@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use async_trait::async_trait;
 use rustykrab_core::types::ToolSchema;
-use rustykrab_core::{Error, Result, Tool};
+use rustykrab_core::{Error, Result, SandboxRequirements, Tool};
 use serde_json::{json, Value};
 
 /// A tool that creates new SKILL.md skills on disk.
@@ -39,6 +39,13 @@ impl Tool for SkillCreateTool {
         "Create a new SKILL.md skill on disk. The skill becomes available on next restart. \
          Provide a name (lowercase a-z, 0-9, hyphens, underscores), a short description, \
          and the markdown instructions body."
+    }
+
+    fn sandbox_requirements(&self) -> SandboxRequirements {
+        SandboxRequirements {
+            needs_fs_write: true,
+            ..SandboxRequirements::default()
+        }
     }
 
     fn schema(&self) -> ToolSchema {

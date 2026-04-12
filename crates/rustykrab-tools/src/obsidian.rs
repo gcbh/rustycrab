@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use rustykrab_core::types::ToolSchema;
-use rustykrab_core::{Error, Result, Tool};
+use rustykrab_core::{Error, Result, SandboxRequirements, Tool};
 use rustykrab_store::SecretStore;
 use serde_json::{json, Value};
 
@@ -395,6 +395,13 @@ impl Tool for ObsidianTool {
          Supports creating, reading, updating, searching, and deleting markdown notes. \
          Documents synced from Notion are automatically stored in the configured sync folder. \
          Requires the Obsidian Local REST API community plugin."
+    }
+
+    fn sandbox_requirements(&self) -> SandboxRequirements {
+        SandboxRequirements {
+            needs_net: true,
+            ..SandboxRequirements::default()
+        }
     }
 
     fn schema(&self) -> ToolSchema {

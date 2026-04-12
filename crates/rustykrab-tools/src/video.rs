@@ -18,7 +18,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use rustykrab_core::types::ToolSchema;
-use rustykrab_core::{Result, Tool};
+use rustykrab_core::{Result, SandboxRequirements, Tool};
 use serde_json::{json, Value};
 
 use rustykrab_channels::video::{CompositionElement, VideoChannel, VideoProject};
@@ -238,6 +238,14 @@ impl Tool for VideoTool {
          explanations, greetings, or any visual content. Requires Node.js >= 22 \
          and FFmpeg. Templates: blank, warm-grain, play-mode, swiss-grid, \
          vignelli, decision-tree, kinetic-type, product-promo, nyt-graph."
+    }
+
+    fn sandbox_requirements(&self) -> SandboxRequirements {
+        SandboxRequirements {
+            needs_fs_write: true,
+            needs_spawn: true,
+            ..SandboxRequirements::default()
+        }
     }
 
     fn schema(&self) -> ToolSchema {

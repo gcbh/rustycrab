@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use rustykrab_core::types::ToolSchema;
-use rustykrab_core::{Result, Tool};
+use rustykrab_core::{Result, SandboxRequirements, Tool};
 use serde_json::{json, Value};
 use std::net::{IpAddr, Ipv4Addr};
 use std::time::Duration;
@@ -129,6 +129,13 @@ impl Tool for NetAdminTool {
 
     fn description(&self) -> &str {
         "Remote administration for machines you own on the local network. Supports SSH command execution and Wake-on-LAN."
+    }
+
+    fn sandbox_requirements(&self) -> SandboxRequirements {
+        SandboxRequirements {
+            needs_net: true,
+            ..SandboxRequirements::default()
+        }
     }
 
     fn schema(&self) -> ToolSchema {

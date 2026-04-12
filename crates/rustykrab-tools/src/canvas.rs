@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use rustykrab_core::types::ToolSchema;
-use rustykrab_core::{Result, Tool};
+use rustykrab_core::{Result, SandboxRequirements, Tool};
 use serde_json::{json, Value};
 
 /// A built-in tool that creates and manipulates visual canvas content.
@@ -33,6 +33,13 @@ impl Tool for CanvasTool {
 
     fn description(&self) -> &str {
         "Create and manipulate visual canvas content: present HTML/SVG, evaluate scripts, and take snapshots."
+    }
+
+    fn sandbox_requirements(&self) -> SandboxRequirements {
+        SandboxRequirements {
+            needs_fs_write: true,
+            ..SandboxRequirements::default()
+        }
     }
 
     fn schema(&self) -> ToolSchema {

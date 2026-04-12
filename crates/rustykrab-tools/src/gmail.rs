@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use rustykrab_core::types::ToolSchema;
-use rustykrab_core::{Error, Result, Tool};
+use rustykrab_core::{Error, Result, SandboxRequirements, Tool};
 use rustykrab_store::SecretStore;
 use serde_json::{json, Value};
 
@@ -903,6 +903,13 @@ impl Tool for GmailTool {
         "Interact with Gmail via IMAP/SMTP using an app password. Supports searching, \
          reading, sending, listing labels, moving messages, marking read/unread, and trashing. \
          Requires gmail_email and gmail_app_password credentials to be stored first."
+    }
+
+    fn sandbox_requirements(&self) -> SandboxRequirements {
+        SandboxRequirements {
+            needs_net: true,
+            ..SandboxRequirements::default()
+        }
     }
 
     fn schema(&self) -> ToolSchema {

@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use rustykrab_core::types::ToolSchema;
-use rustykrab_core::{Error, Result, Tool};
+use rustykrab_core::{Error, Result, SandboxRequirements, Tool};
 use rustykrab_store::SecretStore;
 use serde_json::{json, Value};
 
@@ -653,6 +653,13 @@ impl Tool for NotionTool {
          Supports rich content: headings, callouts, toggles, tables, checklists, \
          bookmarks, quotes, dividers, images, and more. \
          Perfect for trip plans, project docs, reports, and knowledge bases."
+    }
+
+    fn sandbox_requirements(&self) -> SandboxRequirements {
+        SandboxRequirements {
+            needs_net: true,
+            ..SandboxRequirements::default()
+        }
     }
 
     fn schema(&self) -> ToolSchema {

@@ -19,7 +19,7 @@ use base64::Engine;
 use chromiumoxide::cdp::browser_protocol::network::Cookie;
 use chromiumoxide::page::ScreenshotParams;
 use rustykrab_core::types::ToolSchema;
-use rustykrab_core::{Error, Result, Tool};
+use rustykrab_core::{Error, Result, SandboxRequirements, Tool};
 use serde_json::{json, Value};
 
 use crate::security;
@@ -127,6 +127,13 @@ impl Tool for BrowserTool {
          cookies — list cookies; \
          pdf — export page as PDF. \
          Cookies persist across calls. Use snapshot + act for reliable element interaction."
+    }
+
+    fn sandbox_requirements(&self) -> SandboxRequirements {
+        SandboxRequirements {
+            needs_net: true,
+            ..SandboxRequirements::default()
+        }
     }
 
     fn schema(&self) -> ToolSchema {

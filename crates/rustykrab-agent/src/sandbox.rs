@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use rustykrab_core::{Error, Result};
+use rustykrab_core::{Error, Result, SandboxRequirements};
 use serde_json::Value;
 
 /// Policy that controls what a sandboxed tool execution can do.
@@ -57,55 +57,44 @@ impl SandboxPolicy {
 pub trait Sandbox: Send + Sync {
     /// Execute a tool call within the sandbox.
     ///
-    /// The sandbox receives the tool name, arguments, and a policy
-    /// controlling what the sandboxed code can do.
-    async fn execute(&self, tool_name: &str, args: Value, policy: &SandboxPolicy) -> Result<Value>;
+    /// The sandbox receives the tool name, arguments, the tool's declared
+    /// requirements, and a policy controlling what the sandboxed code can do.
+    async fn execute(
+        &self,
+        tool_name: &str,
+        args: Value,
+        requirements: &SandboxRequirements,
+        policy: &SandboxPolicy,
+    ) -> Result<Value>;
 }
 
 /// Validate that a tool's required capabilities are permitted by the policy.
 ///
 /// This is a defense-in-depth check that mirrors the runner's
 /// `enforce_sandbox_policy()`. Even if the runner check is bypassed,
-/// the sandbox itself rejects disallowed operations.
-fn validate_tool_policy(tool_name: &str, policy: &SandboxPolicy) -> Result<()> {
-    let needs_fs_read = matches!(tool_name, "read" | "pdf" | "image");
-    let needs_fs_write = matches!(
-        tool_name,
-        "write" | "edit" | "apply_patch" | "tts" | "image_generate" | "skill_create" | "canvas"
-    );
-    let needs_spawn = matches!(tool_name, "exec" | "process" | "code_execution");
-    let needs_net = matches!(
-        tool_name,
-        "http_request"
-            | "http_session"
-            | "web_fetch"
-            | "web_search"
-            | "x_search"
-            | "browser"
-            | "gmail"
-            | "image_generate"
-            | "tts"
-            | "net_scan"
-            | "net_admin"
-            | "net_audit"
-    );
-
-    if needs_fs_read && !policy.allow_fs_read {
+/// the sandbox itself rejects disallowed operations. Requirements come
+/// from [`Tool::sandbox_requirements`] — no hardcoded tool-name lists.
+fn validate_tool_policy(
+    tool_name: &str,
+    requirements: &SandboxRequirements,
+    policy: &SandboxPolicy,
+) -> Result<()> {
+    if requirements.needs_fs_read && !policy.allow_fs_read {
         return Err(Error::Auth(format!(
             "sandbox denied tool '{tool_name}': filesystem read access not permitted"
         )));
     }
-    if needs_fs_write && !policy.allow_fs_write {
+    if requirements.needs_fs_write && !policy.allow_fs_write {
         return Err(Error::Auth(format!(
             "sandbox denied tool '{tool_name}': filesystem write access not permitted"
         )));
     }
-    if needs_spawn && !policy.allow_spawn {
+    if requirements.needs_spawn && !policy.allow_spawn {
         return Err(Error::Auth(format!(
             "sandbox denied tool '{tool_name}': process spawning not permitted"
         )));
     }
-    if needs_net && !policy.allow_net {
+    if requirements.needs_net && !policy.allow_net {
         return Err(Error::Auth(format!(
             "sandbox denied tool '{tool_name}': network access not permitted"
         )));
@@ -138,12 +127,18 @@ impl Default for ProcessSandbox {
 
 #[async_trait]
 impl Sandbox for ProcessSandbox {
-    async fn execute(&self, tool_name: &str, args: Value, policy: &SandboxPolicy) -> Result<Value> {
+    async fn execute(
+        &self,
+        tool_name: &str,
+        args: Value,
+        requirements: &SandboxRequirements,
+        policy: &SandboxPolicy,
+    ) -> Result<Value> {
         use tokio::time::{timeout, Duration};
 
         // Enforce policy constraints: reject tool calls that require
         // capabilities not granted by the policy.
-        validate_tool_policy(tool_name, policy)?;
+        validate_tool_policy(tool_name, requirements, policy)?;
 
         let timeout_duration = Duration::from_secs(policy.timeout_secs);
         let tool = tool_name.to_string();
@@ -176,6 +171,7 @@ impl Sandbox for NoSandbox {
         &self,
         _tool_name: &str,
         args: Value,
+        _requirements: &SandboxRequirements,
         _policy: &SandboxPolicy,
     ) -> Result<Value> {
         Ok(args)
@@ -187,6 +183,34 @@ mod tests {
     use super::*;
     use serde_json::json;
 
+    fn req_spawn() -> SandboxRequirements {
+        SandboxRequirements {
+            needs_spawn: true,
+            ..Default::default()
+        }
+    }
+    fn req_fs_read() -> SandboxRequirements {
+        SandboxRequirements {
+            needs_fs_read: true,
+            ..Default::default()
+        }
+    }
+    fn req_fs_write() -> SandboxRequirements {
+        SandboxRequirements {
+            needs_fs_write: true,
+            ..Default::default()
+        }
+    }
+    fn req_net() -> SandboxRequirements {
+        SandboxRequirements {
+            needs_net: true,
+            ..Default::default()
+        }
+    }
+    fn req_none() -> SandboxRequirements {
+        SandboxRequirements::default()
+    }
+
     #[tokio::test]
     async fn sandbox_denies_code_execution_without_spawn() {
         let sandbox = ProcessSandbox::new();
@@ -195,7 +219,12 @@ mod tests {
             ..SandboxPolicy::default()
         };
         let result = sandbox
-            .execute("code_execution", json!({"code": "print(1)"}), &policy)
+            .execute(
+                "code_execution",
+                json!({"code": "print(1)"}),
+                &req_spawn(),
+                &policy,
+            )
             .await;
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
@@ -211,7 +240,7 @@ mod tests {
         };
         let args = json!({"code": "print(1)"});
         let result = sandbox
-            .execute("code_execution", args.clone(), &policy)
+            .execute("code_execution", args.clone(), &req_spawn(), &policy)
             .await;
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), args);
@@ -222,7 +251,12 @@ mod tests {
         let sandbox = ProcessSandbox::new();
         let policy = SandboxPolicy::default(); // all denied
         let result = sandbox
-            .execute("read", json!({"path": "/etc/passwd"}), &policy)
+            .execute(
+                "read",
+                json!({"path": "/etc/passwd"}),
+                &req_fs_read(),
+                &policy,
+            )
             .await;
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
@@ -240,7 +274,12 @@ mod tests {
             ..SandboxPolicy::default()
         };
         let result = sandbox
-            .execute("write", json!({"path": "/tmp/x", "content": "y"}), &policy)
+            .execute(
+                "write",
+                json!({"path": "/tmp/x", "content": "y"}),
+                &req_fs_write(),
+                &policy,
+            )
             .await;
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
@@ -258,6 +297,7 @@ mod tests {
             .execute(
                 "http_request",
                 json!({"url": "http://example.com"}),
+                &req_net(),
                 &policy,
             )
             .await;
@@ -272,7 +312,7 @@ mod tests {
         let policy = SandboxPolicy::default();
         // Memory tools don't require fs/net/spawn
         let result = sandbox
-            .execute("memory_save", json!({"fact": "test"}), &policy)
+            .execute("memory_save", json!({"fact": "test"}), &req_none(), &policy)
             .await;
         assert!(result.is_ok());
     }
@@ -287,7 +327,12 @@ mod tests {
         };
         // The async block should be interrupted by the zero timeout
         let result = sandbox
-            .execute("code_execution", json!({"code": "x"}), &policy)
+            .execute(
+                "code_execution",
+                json!({"code": "x"}),
+                &req_spawn(),
+                &policy,
+            )
             .await;
         // With timeout_secs=0, this may or may not timeout depending on
         // scheduling, so we just verify it doesn't panic. A real timeout
@@ -300,13 +345,53 @@ mod tests {
         let sandbox = ProcessSandbox::new();
         let policy = SandboxPolicy::trusted();
         // Trusted allows fs_read, fs_write, net but NOT spawn
-        assert!(sandbox.execute("read", json!({}), &policy).await.is_ok());
-        assert!(sandbox.execute("write", json!({}), &policy).await.is_ok());
         assert!(sandbox
-            .execute("http_request", json!({}), &policy)
+            .execute("read", json!({}), &req_fs_read(), &policy)
+            .await
+            .is_ok());
+        assert!(sandbox
+            .execute("write", json!({}), &req_fs_write(), &policy)
+            .await
+            .is_ok());
+        assert!(sandbox
+            .execute("http_request", json!({}), &req_net(), &policy)
             .await
             .is_ok());
         // Spawn is still denied in trusted policy
-        assert!(sandbox.execute("exec", json!({}), &policy).await.is_err());
+        assert!(sandbox
+            .execute("exec", json!({}), &req_spawn(), &policy)
+            .await
+            .is_err());
+    }
+
+    #[tokio::test]
+    async fn sandbox_allows_new_net_tools_with_net_policy() {
+        let sandbox = ProcessSandbox::new();
+        let policy = SandboxPolicy {
+            allow_net: true,
+            ..SandboxPolicy::default()
+        };
+        // Tools like obsidian/notion that declare needs_net work without
+        // being in any hardcoded allowlist.
+        assert!(sandbox
+            .execute("obsidian", json!({}), &req_net(), &policy)
+            .await
+            .is_ok());
+        assert!(sandbox
+            .execute("notion", json!({}), &req_net(), &policy)
+            .await
+            .is_ok());
+    }
+
+    #[tokio::test]
+    async fn sandbox_denies_new_net_tools_without_net_policy() {
+        let sandbox = ProcessSandbox::new();
+        let policy = SandboxPolicy::default(); // all denied
+        let result = sandbox
+            .execute("obsidian", json!({}), &req_net(), &policy)
+            .await;
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("network access not permitted"), "got: {err}");
     }
 }

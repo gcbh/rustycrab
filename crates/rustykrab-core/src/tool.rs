@@ -4,6 +4,23 @@ use serde_json::Value;
 use crate::error::Result;
 use crate::types::ToolSchema;
 
+/// Declares what sandbox capabilities a tool requires at runtime.
+///
+/// Each tool overrides [`Tool::sandbox_requirements`] to declare its needs.
+/// The sandbox enforces these requirements against the session's policy —
+/// no hardcoded tool-name allowlists required.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SandboxRequirements {
+    /// Tool reads from the filesystem.
+    pub needs_fs_read: bool,
+    /// Tool writes to the filesystem.
+    pub needs_fs_write: bool,
+    /// Tool makes network requests.
+    pub needs_net: bool,
+    /// Tool spawns child processes.
+    pub needs_spawn: bool,
+}
+
 /// Trait implemented by every tool available to the agent.
 #[async_trait]
 pub trait Tool: Send + Sync {
@@ -25,6 +42,16 @@ pub trait Tool: Send + Sync {
     /// tool that will fail due to missing configuration.
     fn available(&self) -> bool {
         true
+    }
+
+    /// Declare the sandbox capabilities this tool requires.
+    ///
+    /// The runner checks these requirements against the session's
+    /// [`SandboxPolicy`] before execution. Tools that need no special
+    /// capabilities (e.g. in-memory operations) can use the default,
+    /// which requires nothing.
+    fn sandbox_requirements(&self) -> SandboxRequirements {
+        SandboxRequirements::default()
     }
 
     /// Execute the tool with the given arguments, returning a JSON result.
