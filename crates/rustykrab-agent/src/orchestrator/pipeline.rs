@@ -78,15 +78,28 @@ impl OrchestrationPipeline {
     /// The entire pipeline is wrapped in a timeout to prevent unbounded execution.
     /// A deadline is computed and threaded through to the executor so that tool
     /// retries can bail out early when the pipeline is about to time out.
+    ///
+    /// The configured `pipeline_timeout_secs` is treated as the base budget and
+    /// scaled by complexity: trivial/simple get 1×, moderate gets 2×, complex
+    /// gets 3×, and critical gets 4×.  This prevents complex tasks (which make
+    /// many sequential model calls) from being killed by a budget sized for
+    /// simple tasks.
     pub async fn run(
         &self,
         request: &str,
         complexity: TaskComplexity,
         context: Option<&str>,
     ) -> Result<PipelineResult> {
-        tracing::info!(?complexity, "running orchestration pipeline");
+        let multiplier = match complexity {
+            TaskComplexity::Trivial | TaskComplexity::Simple => 1,
+            TaskComplexity::Moderate => 2,
+            TaskComplexity::Complex => 3,
+            TaskComplexity::Critical => 4,
+        };
+        let timeout_secs = self.config.pipeline_timeout_secs * multiplier;
 
-        let timeout_secs = self.config.pipeline_timeout_secs;
+        tracing::info!(?complexity, timeout_secs, "running orchestration pipeline");
+
         let deadline = Instant::now() + std::time::Duration::from_secs(timeout_secs);
         let result = tokio::time::timeout(
             std::time::Duration::from_secs(timeout_secs),
@@ -191,7 +204,7 @@ impl OrchestrationPipeline {
             self.config.clone(),
         )
         .with_deadline(deadline);
-        let synthesizer = Synthesizer::new(self.provider.clone());
+        let synthesizer = Synthesizer::new(self.provider.clone(), self.config.clone());
         let tool_names: Vec<&str> = self.tools.iter().map(|t| t.name()).collect();
 
         let max_cycles = self.config.max_recursion_depth.max(1);
@@ -199,7 +212,24 @@ impl OrchestrationPipeline {
         let mut accumulated_results = Vec::new();
         let mut stages = Vec::new();
 
+        // Reserve a minimum time buffer for the final synthesis pass so
+        // the pipeline doesn't time out between the last execute and
+        // synthesize steps.  This also prevents starting new cycles that
+        // have no chance of completing.
+        let min_remaining_secs = self.config.model_call_timeout_secs + 10;
+
         for cycle in 0..max_cycles {
+            // Check whether enough time remains to start another cycle.
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.as_secs() < min_remaining_secs {
+                tracing::warn!(
+                    cycle,
+                    remaining_secs = remaining.as_secs(),
+                    "skipping cycle — insufficient time before pipeline deadline",
+                );
+                break;
+            }
+
             // Build the decomposition request: on the first cycle, use the
             // original request. On subsequent cycles, ask the decomposer to
             // plan the remaining work given what has been completed so far.
