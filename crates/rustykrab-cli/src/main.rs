@@ -1027,17 +1027,6 @@ fn load_orchestration_config(data_dir: &std::path::Path) -> anyhow::Result<Orche
             config.consistency_samples = samples;
         }
     }
-    if let Ok(val) = std::env::var("ORCHESTRATION_MAX_REFINEMENT_ITERATIONS") {
-        if let Ok(iters) = val.parse() {
-            config.max_refinement_iterations = iters;
-        }
-    }
-    if let Ok(model) = std::env::var("ORCHESTRATION_FALLBACK_MODEL") {
-        config.fallback_model = Some(model);
-    }
-    if let Ok(model) = std::env::var("ORCHESTRATION_PRIMARY_MODEL") {
-        config.primary_model = Some(model);
-    }
     if let Ok(val) = std::env::var("ORCHESTRATION_PIPELINE_TIMEOUT_SECS") {
         if let Ok(secs) = val.parse() {
             config.pipeline_timeout_secs = secs;
