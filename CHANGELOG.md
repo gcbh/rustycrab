@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.8] - 2026-04-12
+
+- Add tool availability checking to prevent unavailable tools from being used (#341)
+
 ## [1.4.7] - 2026-04-11
 
 - Fix credential_read tool to return actual credential values (#340)
