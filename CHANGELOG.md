@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.11] - 2026-04-12
+
+- [fix] read tool returns NotFound for missing files (#344)
+
 ## [1.4.10] - 2026-04-12
 
 - Add central secret registry and cross-platform OS keychain support (#343)
