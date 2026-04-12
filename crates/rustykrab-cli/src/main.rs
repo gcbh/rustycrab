@@ -99,6 +99,11 @@ impl CronBackend for CronAdapter {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    // --- TLS crypto provider (must be set before any rustls usage) ---
+    rustls::crypto::ring::default_provider()
+        .install_default()
+        .expect("Failed to install rustls crypto provider");
+
     // --- Data directory ---
     let data_dir = dirs::data_local_dir()
         .unwrap_or_else(|| std::path::PathBuf::from("."))
