@@ -814,11 +814,20 @@ async fn execute_single_tool(
 
     tracing::info!(tool = call.name, session = %session_id, "executing tool in sandbox");
 
+    let allow_net = capabilities.has(&Capability::HttpRequest);
     let policy = SandboxPolicy {
-        allow_net: capabilities.has(&Capability::HttpRequest),
+        allow_net,
         allow_fs_read: capabilities.has(&Capability::FileRead),
         allow_fs_write: capabilities.has(&Capability::FileWrite),
         allow_spawn: capabilities.has(&Capability::ShellExec),
+        // Network tools (net_scan, net_admin, net_audit) can take several
+        // minutes to sweep a subnet. Use a 5-minute timeout when network
+        // access is enabled; keep the default 30s for everything else.
+        timeout_secs: if allow_net {
+            300
+        } else {
+            SandboxPolicy::default().timeout_secs
+        },
         ..SandboxPolicy::default()
     };
 
@@ -887,6 +896,9 @@ fn enforce_sandbox_policy(tool_name: &str, policy: &SandboxPolicy) -> Result<()>
             | "gmail"
             | "image_generate"
             | "tts"
+            | "net_scan"
+            | "net_admin"
+            | "net_audit"
     );
     let is_known = needs_fs_read
         || needs_fs_write
