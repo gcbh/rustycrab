@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-04-12
+
+- fix: replace hardcoded sandbox allowlist with Tool::sandbox_requirements() (#356)
+
 ## [2.0.4] - 2026-04-12
 
 - fix: add net_scan, net_admin, net_audit to runner sandbox policy allowlist (#354)
