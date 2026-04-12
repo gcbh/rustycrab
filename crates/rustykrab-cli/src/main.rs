@@ -13,7 +13,7 @@ const BUILD_DATE: &str = env!("RUSTYKRAB_BUILD_DATE");
 fn version_string() -> String {
     format!("{VERSION} ({GIT_HASH}{GIT_DIRTY}, {BUILD_DATE})")
 }
-use rustykrab_agent::{AgentEvent, HarnessProfile, HarnessRouter, OrchestrationPipeline};
+use rustykrab_agent::{AgentEvent, HarnessProfile, HarnessRouter};
 use rustykrab_channels::telegram::ChannelMessage;
 use rustykrab_channels::{TelegramChannel, VideoChannel, VideoConfig};
 use rustykrab_core::model::ModelProvider;
@@ -356,28 +356,8 @@ async fn main() -> anyhow::Result<()> {
 
     let router = Arc::new(HarnessRouter::new(classifier).with_base(profile));
 
-    // --- Orchestration pipeline (optional, enabled via RUSTYKRAB_ORCHESTRATION=true) ---
+    // --- Orchestration config (used by RLM module) ---
     let orchestration_config = load_orchestration_config(&data_dir)?;
-    let orchestration_enabled = std::env::var("RUSTYKRAB_ORCHESTRATION")
-        .map(|v| v == "true" || v == "1")
-        .unwrap_or(false);
-
-    let orchestration_pipeline = if orchestration_enabled {
-        let sandbox = Arc::new(rustykrab_agent::ProcessSandbox::new());
-        let pipeline = OrchestrationPipeline::new(
-            provider.clone(),
-            tools.clone(),
-            sandbox,
-            orchestration_config.clone(),
-        );
-        tracing::info!("orchestration pipeline enabled");
-        Some(Arc::new(pipeline))
-    } else {
-        tracing::info!(
-            "orchestration pipeline disabled (set RUSTYKRAB_ORCHESTRATION=true to enable)"
-        );
-        None
-    };
 
     // --- Load SKILL.md skills ---
     let skills_dir = data_dir.join("skills");
@@ -403,10 +383,6 @@ async fn main() -> anyhow::Result<()> {
         .with_harness_router(router)
         .with_orchestration_config(orchestration_config)
         .with_skill_registry(Arc::new(skill_registry));
-
-    if let Some(pipeline) = orchestration_pipeline {
-        state = state.with_orchestration_pipeline(pipeline);
-    }
 
     // --- Attach video channel to state ---
     if let Some(vc) = video_channel {
@@ -1050,17 +1026,6 @@ fn load_orchestration_config(data_dir: &std::path::Path) -> anyhow::Result<Orche
         if let Ok(samples) = val.parse() {
             config.consistency_samples = samples;
         }
-    }
-    if let Ok(val) = std::env::var("ORCHESTRATION_MAX_REFINEMENT_ITERATIONS") {
-        if let Ok(iters) = val.parse() {
-            config.max_refinement_iterations = iters;
-        }
-    }
-    if let Ok(model) = std::env::var("ORCHESTRATION_FALLBACK_MODEL") {
-        config.fallback_model = Some(model);
-    }
-    if let Ok(model) = std::env::var("ORCHESTRATION_PRIMARY_MODEL") {
-        config.primary_model = Some(model);
     }
     if let Ok(val) = std::env::var("ORCHESTRATION_PIPELINE_TIMEOUT_SECS") {
         if let Ok(secs) = val.parse() {
