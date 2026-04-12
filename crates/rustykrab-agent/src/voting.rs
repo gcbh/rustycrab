@@ -3,6 +3,8 @@
 //! Runs the same query multiple times with temperature variation,
 //! compares outputs for consistency, and either takes the majority
 //! answer or flags inconsistencies for human review.
+//!
+//! This is orthogonal to the agent loop and can wrap any model call.
 
 use std::sync::Arc;
 
@@ -16,8 +18,6 @@ use uuid::Uuid;
 
 /// Self-consistency voter that runs multiple samples and compares.
 pub struct ConsistencyVoter {
-    /// Multiple providers with different temperatures, or a single
-    /// provider that we call multiple times.
     provider: Arc<dyn ModelProvider>,
     config: OrchestrationConfig,
     strategy: VotingStrategy,
@@ -59,9 +59,6 @@ impl ConsistencyVoter {
         let num_samples = self.config.consistency_samples;
         tracing::info!(num_samples, "running self-consistency voting");
 
-        // Run all samples concurrently, bounded by a semaphore to prevent
-        // pathological workloads from spawning unbounded concurrent LLM
-        // calls (fixes ASYNC-M1).
         let semaphore = Arc::new(Semaphore::new(self.config.max_concurrent_tasks));
         let mut handles = Vec::with_capacity(num_samples);
         for i in 0..num_samples {
@@ -105,7 +102,6 @@ impl ConsistencyVoter {
             }));
         }
 
-        // Collect responses.
         let mut responses = Vec::with_capacity(num_samples);
         for handle in handles {
             match handle.await {
@@ -129,7 +125,6 @@ impl ConsistencyVoter {
             ));
         }
 
-        // If only one response, return it directly.
         if responses.len() == 1 {
             return Ok(VoteResult {
                 answer: responses[0].clone(),
@@ -141,20 +136,17 @@ impl ConsistencyVoter {
             });
         }
 
-        // Use the model to compare and find consensus.
         let consensus = self.find_consensus(query, &responses).await?;
         let confidence = consensus.agreement_count as f64 / consensus.total_samples as f64;
 
-        // Apply voting strategy.
         match self.strategy {
             VotingStrategy::Majority => Ok(consensus),
             VotingStrategy::UnanimousOrEscalate => {
                 if consensus.unanimous {
                     Ok(consensus)
                 } else {
-                    // Return the result but with low confidence to signal escalation.
                     Ok(VoteResult {
-                        confidence: confidence * 0.5, // Penalize non-unanimous
+                        confidence: confidence * 0.5,
                         ..consensus
                     })
                 }
@@ -193,8 +185,7 @@ impl ConsistencyVoter {
         })??;
         let answer = result.message.content.as_text().unwrap_or("").to_string();
 
-        // Estimate agreement by similarity check, filtering out common stop
-        // words that inflate overlap scores (fixes ORCH-M3).
+        // Estimate agreement by content-word overlap, filtering out stop words.
         const STOP_WORDS: &[&str] = &[
             "the", "a", "an", "is", "are", "was", "were", "be", "been", "being", "have", "has",
             "had", "do", "does", "did", "will", "would", "shall", "should", "may", "might", "can",
@@ -215,7 +206,7 @@ impl ConsistencyVoter {
             .iter()
             .filter(|r| {
                 if answer_words.is_empty() {
-                    return true; // No content words — assume agreement
+                    return true;
                 }
                 let r_lower = r.to_lowercase();
                 let response_words: std::collections::HashSet<String> = r_lower
